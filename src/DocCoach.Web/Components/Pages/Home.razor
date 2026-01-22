@@ -1,0 +1,93 @@
+@page "/"
+@using DocCoach.Web.Models
+@using DocCoach.Web.State
+@inject AppState AppState
+@inject NavigationManager Navigation
+
+<PageTitle>Doc Coach</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-8">
+    <MudPaper Class="pa-8 text-center" Elevation="3">
+        <MudIcon Icon="@Icons.Material.Filled.Assessment" Size="Size.Large" Color="Color.Primary" Class="mb-4" />
+        <MudText Typo="Typo.h3" Class="mb-2">Doc Coach</MudText>
+        <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-6">
+            AI-powered quality assessment for audit reports
+        </MudText>
+
+        <MudDivider Class="my-6" />
+
+        <MudText Typo="Typo.h6" Class="mb-4">Select Your Role to Continue</MudText>
+
+        <MudGrid Justify="Justify.Center" Spacing="4">
+            <MudItem>
+                <MudCard Style="width: 250px;" Elevation="@(AppState.CurrentRole == UserRole.Auditor ? 8 : 2)">
+                    <MudCardContent Class="text-center pa-4">
+                        <MudIcon Icon="@Icons.Material.Filled.RateReview" Size="Size.Large" Color="Color.Primary" Class="mb-3" />
+                        <MudText Typo="Typo.h6">Auditor</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            Upload audit reports and receive AI-generated feedback with quality scores
+                        </MudText>
+                    </MudCardContent>
+                    <MudCardActions Class="justify-center">
+                        @if (AppState.CurrentRole == UserRole.Auditor)
+                        {
+                            <MudChip T="string" Color="Color.Success" Size="Size.Small">Selected</MudChip>
+                        }
+                        else
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@SelectAuditorRole">
+                                Select
+                            </MudButton>
+                        }
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+
+            <MudItem>
+                <MudCard Style="width: 250px;" Elevation="@(AppState.CurrentRole == UserRole.Admin ? 8 : 2)">
+                    <MudCardContent Class="text-center pa-4">
+                        <MudIcon Icon="@Icons.Material.Filled.AdminPanelSettings" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
+                        <MudText Typo="Typo.h6">Administrator</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            Manage guideline sets, review rules, and example documents
+                        </MudText>
+                    </MudCardContent>
+                    <MudCardActions Class="justify-center">
+                        @if (AppState.CurrentRole == UserRole.Admin)
+                        {
+                            <MudChip T="string" Color="Color.Success" Size="Size.Small">Selected</MudChip>
+                        }
+                        else
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="@SelectAdminRole">
+                                Select
+                            </MudButton>
+                        }
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        </MudGrid>
+
+        @if (AppState.CurrentRole != UserRole.None)
+        {
+            <MudAlert Severity="Severity.Info" Class="mt-6">
+                You are logged in as <strong>@AppState.CurrentRole</strong>. 
+                Use the navigation menu to access available features.
+            </MudAlert>
+        }
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private void SelectAuditorRole()
+    {
+        AppState.CurrentRole = UserRole.Auditor;
+        Navigation.NavigateTo("/auditor/upload");
+    }
+    
+    private void SelectAdminRole()
+    {
+        AppState.CurrentRole = UserRole.Admin;
+        Navigation.NavigateTo("/admin/guidelines");
+    }
+}

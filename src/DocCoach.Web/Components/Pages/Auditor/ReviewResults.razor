@@ -1,0 +1,329 @@
+@page "/auditor/review/{ReviewId}"
+@using DocCoach.Web.Models
+@using DocCoach.Web.Services.Interfaces
+@using DocCoach.Web.State
+@using DocCoach.Web.Components.Shared
+@inject IReviewService ReviewService
+@inject IDocumentService DocumentService
+@inject IGuidelineService GuidelineService
+@inject AppState AppState
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<PageTitle>Review Results - Doc Coach</PageTitle>
+
+@if (_isLoading)
+{
+    <MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+        <MudStack Spacing="4">
+            <MudSkeleton Width="200px" Height="40px" />
+            <MudGrid>
+                <MudItem xs="12" md="4">
+                    <MudSkeleton Width="100%" Height="200px" />
+                </MudItem>
+                <MudItem xs="12" md="8">
+                    <MudSkeleton Width="100%" Height="200px" />
+                </MudItem>
+            </MudGrid>
+            <MudSkeleton Width="100%" Height="400px" />
+        </MudStack>
+    </MudContainer>
+}
+else if (_review == null)
+{
+    <MudContainer MaxWidth="MaxWidth.Medium" Class="mt-8">
+        <MudAlert Severity="Severity.Error">
+            <MudText Typo="Typo.h6">Review Not Found</MudText>
+            <MudText>The requested review could not be found.</MudText>
+            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/auditor/history" Class="mt-2">
+                View Document History
+            </MudButton>
+        </MudAlert>
+    </MudContainer>
+}
+else
+{
+    <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+        @* Header *@
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
+            <MudStack>
+                <MudBreadcrumbs Items="_breadcrumbs" />
+                <MudText Typo="Typo.h4">
+                    <MudIcon Icon="@Icons.Material.Filled.Assessment" Class="mr-2" />
+                    Review Results
+                </MudText>
+            </MudStack>
+            
+            <MudStack Row="true" Spacing="2">
+                <MudButton Variant="Variant.Outlined" 
+                           Color="Color.Primary" 
+                           StartIcon="@Icons.Material.Filled.FindInPage"
+                           Href="@($"/auditor/review-detail/{ReviewId}")">
+                    Detail View
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" 
+                           Color="Color.Primary" 
+                           StartIcon="@Icons.Material.Filled.Download"
+                           OnClick="ExportReport">
+                    Export Report
+                </MudButton>
+                <MudButton Variant="Variant.Filled" 
+                           Color="Color.Primary" 
+                           StartIcon="@Icons.Material.Filled.CloudUpload"
+                           Href="/auditor/upload">
+                    Upload New Document
+                </MudButton>
+            </MudStack>
+        </MudStack>
+        
+        @* Document Info Bar *@
+        <MudPaper Class="pa-3 mb-4" Elevation="1">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Filled.Description" />
+                    <MudText Typo="Typo.subtitle1">
+                        <strong>@(_document?.Name ?? "Unknown Document")</strong>
+                    </MudText>
+                </MudStack>
+                
+                <MudStack Row="true" Spacing="4">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <MudIcon Icon="@Icons.Material.Filled.Rule" Size="Size.Small" Color="Color.Secondary" />
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            @(_guidelineSet?.Name ?? "Unknown Guideline Set")
+                        </MudText>
+                    </MudStack>
+                    
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <MudIcon Icon="@Icons.Material.Filled.AccessTime" Size="Size.Small" Color="Color.Secondary" />
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            @_review.CreatedAt.ToString("g")
+                        </MudText>
+                    </MudStack>
+                    
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <MudIcon Icon="@Icons.Material.Filled.Timer" Size="Size.Small" Color="Color.Secondary" />
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            @((_review.ProcessingTimeMs / 1000.0).ToString("F1"))s processing time
+                        </MudText>
+                    </MudStack>
+
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <MudIcon Icon="@Icons.Material.Filled.TextSnippet" Size="Size.Small" Color="Color.Secondary" />
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            @_review.ExtractedTextLength.ToString("N0") chars
+                        </MudText>
+                    </MudStack>
+                </MudStack>
+            </MudStack>
+        </MudPaper>
+        
+        @* Document Summary *@
+        @if (!string.IsNullOrWhiteSpace(_review.Summary))
+        {
+            <MudPaper Class="pa-4 mb-4" Elevation="1" Style="background-color: var(--mud-palette-background-gray);">
+                <MudStack Row="true" AlignItems="AlignItems.Start" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Primary" />
+                    <MudStack Spacing="1">
+                        <MudText Typo="Typo.subtitle2" Color="Color.Primary">
+                            <strong>Document Summary</strong>
+                        </MudText>
+                        <MudText Typo="Typo.body2">
+                            @_review.Summary
+                        </MudText>
+                    </MudStack>
+                </MudStack>
+            </MudPaper>
+        }
+        
+        @* Main Content *@
+        <MudGrid Spacing="4">
+            @* Score Card Column *@
+            <MudItem xs="12" md="4">
+                <ScoreCard Title="Quality Score" 
+                           Score="@_review.OverallScore" 
+                           DimensionScores="@_review.DimensionScores" 
+                           ShowCategories="true" />
+                
+                @* Quick Stats *@
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-3">Quick Stats</MudText>
+                    <MudSimpleTable Dense="true" Hover="true" Bordered="false">
+                        <tbody>
+                            <tr>
+                                <td><MudIcon Icon="@Icons.Material.Filled.Error" Color="Color.Error" Size="Size.Small" Class="mr-2" />Critical Issues</td>
+                                <td class="text-right"><strong>@GetSeverityCount(FeedbackSeverity.Error)</strong></td>
+                            </tr>
+                            <tr>
+                                <td><MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Warning" Size="Size.Small" Class="mr-2" />Warnings</td>
+                                <td class="text-right"><strong>@GetSeverityCount(FeedbackSeverity.Warning)</strong></td>
+                            </tr>
+                            <tr>
+                                <td><MudIcon Icon="@Icons.Material.Filled.Info" Color="Color.Info" Size="Size.Small" Class="mr-2" />Suggestions</td>
+                                <td class="text-right"><strong>@GetSeverityCount(FeedbackSeverity.Info)</strong></td>
+                            </tr>
+                            <tr>
+                                <td><MudIcon Icon="@Icons.Material.Filled.Summarize" Size="Size.Small" Class="mr-2" />Total Items</td>
+                                <td class="text-right"><strong>@_review.FeedbackItems.Count</strong></td>
+                            </tr>
+                        </tbody>
+                    </MudSimpleTable>
+                </MudPaper>
+                
+                @* Actions *@
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-3">Actions</MudText>
+                    <MudStack Spacing="2">
+                        <MudButton Variant="Variant.Outlined" 
+                                   FullWidth="true"
+                                   StartIcon="@Icons.Material.Filled.Compare"
+                                   OnClick="CompareVersions"
+                                   Disabled="true">
+                            Compare Versions
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" 
+                                   FullWidth="true"
+                                   StartIcon="@Icons.Material.Filled.Refresh"
+                                   OnClick="ReRunAnalysis">
+                            Re-run Analysis
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" 
+                                   FullWidth="true"
+                                   StartIcon="@Icons.Material.Filled.FileDownload"
+                                   OnClick="DownloadDocument">
+                            Download Original
+                        </MudButton>
+                    </MudStack>
+                </MudPaper>
+                
+                @* Example Documents Reference *@
+                <div class="mt-4">
+                    <ExampleReference Examples="@_examples" IsLoading="@_examplesLoading" />
+                </div>
+            </MudItem>
+            
+            @* Feedback List Column *@
+            <MudItem xs="12" md="8">
+                <FeedbackList Items="@_review.FeedbackItems" 
+                              ShowActions="false" />
+            </MudItem>
+        </MudGrid>
+    </MudContainer>
+}
+
+@code {
+    [Parameter] public string ReviewId { get; set; } = "";
+    
+    private bool _isLoading = true;
+    private Review? _review;
+    private Document? _document;
+    private GuidelineSet? _guidelineSet;
+    private IReadOnlyList<ExampleDocument> _examples = Array.Empty<ExampleDocument>();
+    private bool _examplesLoading = true;
+    
+    private List<BreadcrumbItem> _breadcrumbs = [];
+    
+    protected override async Task OnInitializedAsync()
+    {
+        // Ensure user is in Auditor role
+        if (AppState.CurrentRole == UserRole.None)
+        {
+            AppState.CurrentRole = UserRole.Auditor;
+        }
+        
+        await LoadReviewData();
+    }
+    
+    private async Task LoadReviewData()
+    {
+        _isLoading = true;
+        StateHasChanged();
+        
+        try
+        {
+            _review = await ReviewService.GetByIdAsync(ReviewId);
+            
+            if (_review != null)
+            {
+                _document = await DocumentService.GetByIdAsync(_review.DocumentId);
+                _guidelineSet = await GuidelineService.GetByIdAsync(_review.GuidelineSetId);
+                
+                _breadcrumbs = new List<BreadcrumbItem>
+                {
+                    new BreadcrumbItem("Home", href: "/"),
+                    new BreadcrumbItem("Documents", href: "/auditor/history"),
+                    new BreadcrumbItem(_document?.Name ?? "Review", href: null, disabled: true)
+                };
+                
+                // Load example documents in background
+                _ = LoadExamplesAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading review: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+    
+    private async Task LoadExamplesAsync()
+    {
+        if (_review == null) return;
+        
+        try
+        {
+            _examplesLoading = true;
+            _examples = await GuidelineService.GetExamplesAsync(_review.GuidelineSetId);
+        }
+        finally
+        {
+            _examplesLoading = false;
+            StateHasChanged();
+        }
+    }
+    
+    private int GetSeverityCount(FeedbackSeverity severity)
+    {
+        return _review?.FeedbackItems.Count(f => f.Severity == severity) ?? 0;
+    }
+    
+    private void ExportReport()
+    {
+        Snackbar.Add("Export functionality coming soon!", Severity.Info);
+    }
+    
+    private void CompareVersions()
+    {
+        Snackbar.Add("Version comparison coming soon!", Severity.Info);
+    }
+    
+    private async Task ReRunAnalysis()
+    {
+        if (_review == null) return;
+        
+        try
+        {
+            Snackbar.Add("Starting new analysis...", Severity.Info);
+            
+            var newReview = await ReviewService.AnalyzeAsync(
+                _review.DocumentId, 
+                _review.GuidelineSetId);
+            
+            Navigation.NavigateTo($"/auditor/review/{newReview.Id}", forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+    
+    private void DownloadDocument()
+    {
+        if (_document == null) return;
+        Snackbar.Add("Download functionality coming soon!", Severity.Info);
+    }
+}

@@ -1,0 +1,283 @@
+@using Microsoft.AspNetCore.Components.Rendering
+
+<MudPaper Class="document-viewer pa-1" Elevation="1" Style="@GetContainerStyle()">
+    @* Header *@
+    <div class="document-header">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                <MudIcon Icon="@Icons.Material.Filled.Article" Size="Size.Small" />
+                <MudText Typo="Typo.subtitle1">Document</MudText>
+                
+                @if (!string.IsNullOrEmpty(DocumentId))
+                {
+                    <MudButtonGroup Size="Size.Small" Variant="Variant.Outlined" Class="ml-2">
+                        <MudButton Color="@(_viewMode == ViewMode.Text ? Color.Primary : Color.Default)"
+                                   Variant="@(_viewMode == ViewMode.Text ? Variant.Filled : Variant.Outlined)"
+                                   OnClick="@(() => SetViewMode(ViewMode.Text))"
+                                   Size="Size.Small">
+                            <MudIcon Icon="@Icons.Material.Filled.TextFields" Size="Size.Small" Class="mr-1" />
+                            Text
+                        </MudButton>
+                        <MudButton Color="@(_viewMode == ViewMode.Original ? Color.Primary : Color.Default)"
+                                   Variant="@(_viewMode == ViewMode.Original ? Variant.Filled : Variant.Outlined)"
+                                   OnClick="@(() => SetViewMode(ViewMode.Original))"
+                                   Size="Size.Small">
+                            <MudIcon Icon="@Icons.Material.Filled.PictureAsPdf" Size="Size.Small" Class="mr-1" />
+                            Original
+                        </MudButton>
+                    </MudButtonGroup>
+                }
+            </MudStack>
+            
+            @if (_viewMode == ViewMode.Text)
+            {
+                <MudStack Row="true" Spacing="0" AlignItems="AlignItems.Center">
+                    <MudIconButton Icon="@Icons.Material.Filled.ZoomOut" 
+                                   Size="Size.Small" 
+                                   OnClick="ZoomOut"
+                                   Disabled="@(_fontSize <= 10)" />
+                    <MudText Typo="Typo.caption" Class="mx-1">@_fontSize px</MudText>
+                    <MudIconButton Icon="@Icons.Material.Filled.ZoomIn" 
+                                   Size="Size.Small" 
+                                   OnClick="ZoomIn"
+                                   Disabled="@(_fontSize >= 24)" />
+                    <MudDivider Vertical="true" FlexItem="true" Class="mx-1" Style="height: 20px;" />
+                    <MudIconButton Icon="@Icons.Material.Filled.FormatListNumbered" 
+                                   Size="Size.Small" 
+                                   OnClick="ToggleLineNumbers"
+                                   Color="@(ShowLineNumbers ? Color.Primary : Color.Default)" />
+                </MudStack>
+            }
+        </MudStack>
+    </div>
+    
+    @* Document Content - Text View or Original *@
+    @if (_viewMode == ViewMode.Text)
+    {
+        <div class="document-text-container" style="@GetTextContainerStyle()" @ref="_textContainer">
+            @if (string.IsNullOrWhiteSpace(DocumentText))
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true">
+                    No document text available.
+                </MudAlert>
+            }
+            else
+            {
+                @RenderDocumentText()
+            }
+        </div>
+    }
+    else
+    {
+        <div class="document-original-container">
+            @if (string.IsNullOrEmpty(DocumentId))
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true">
+                    Original document not available.
+                </MudAlert>
+            }
+            else if (IsPdfDocument)
+            {
+                <iframe src="@GetDocumentUrl()" 
+                        class="document-iframe"
+                        title="Original Document" />
+            }
+            else
+            {
+                @* For DOCX, show a message with download option since browsers can't render DOCX directly *@
+                <div class="docx-preview-fallback">
+                    <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Style="height: 100%;">
+                        <MudIcon Icon="@Icons.Material.Filled.Description" Size="Size.Large" Color="Color.Primary" />
+                        <MudText Typo="Typo.h6">Word Document</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                            DOCX files cannot be previewed directly in the browser.
+                        </MudText>
+                        <MudButton Variant="Variant.Filled" 
+                                   Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Download"
+                                   Href="@GetDocumentUrl()"
+                                   Target="_blank">
+                            Download Original
+                        </MudButton>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-4">
+                            Switch to "Text" view to see extracted content
+                        </MudText>
+                    </MudStack>
+                </div>
+            }
+        </div>
+    }
+</MudPaper>
+
+<style>
+    .document-viewer {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    
+    .document-header {
+        flex-shrink: 0;
+        padding-bottom: 4px;
+        border-bottom: 1px solid var(--mud-palette-divider);
+        margin-bottom: 4px;
+    }
+    
+    .document-text-container {
+        overflow-y: auto;
+        overflow-x: hidden;
+        flex: 1;
+        min-height: 0;
+        font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        line-height: 1.4;
+        padding: 4px;
+        border-radius: 4px;
+        background-color: var(--mud-palette-surface);
+    }
+    
+    .document-original-container {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        border-radius: 4px;
+        overflow: hidden;
+        background-color: var(--mud-palette-surface);
+    }
+    
+    .document-iframe {
+        flex: 1;
+        width: 100%;
+        border: none;
+        background: white;
+    }
+    
+    .docx-preview-fallback {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 24px;
+    }
+    
+    .document-line {
+        display: flex;
+        min-height: 1.6em;
+    }
+    
+    .line-number {
+        user-select: none;
+        text-align: right;
+        padding-right: 16px;
+        min-width: 50px;
+        color: var(--mud-palette-text-secondary);
+        border-right: 1px solid var(--mud-palette-divider);
+        margin-right: 16px;
+    }
+    
+    .line-content {
+        flex: 1;
+    }
+</style>
+
+@code {
+    [Parameter]
+    public string? DocumentText { get; set; }
+    
+    [Parameter]
+    public string? DocumentId { get; set; }
+    
+    [Parameter]
+    public string? ContentType { get; set; }
+    
+    [Parameter]
+    public bool ShowLineNumbers { get; set; } = true;
+    
+    [Parameter]
+    public string Height { get; set; } = "calc(100vh - 200px)";
+    
+    private int _fontSize = 14;
+    private ElementReference _textContainer;
+    private ViewMode _viewMode = ViewMode.Text;
+    
+    private enum ViewMode { Text, Original }
+    
+    private bool IsPdfDocument => ContentType?.Contains("pdf", StringComparison.OrdinalIgnoreCase) == true;
+    
+    private string GetDocumentUrl() => $"/api/documents/{DocumentId}/file";
+    
+    private void SetViewMode(ViewMode mode)
+    {
+        _viewMode = mode;
+    }
+    
+    private string GetContainerStyle() => $"height: {Height};";
+    
+    private string GetTextContainerStyle() => $"font-size: {_fontSize}px;";
+    
+    private void ZoomIn()
+    {
+        if (_fontSize < 24) _fontSize += 2;
+    }
+    
+    private void ZoomOut()
+    {
+        if (_fontSize > 10) _fontSize -= 2;
+    }
+    
+    private void ToggleLineNumbers()
+    {
+        ShowLineNumbers = !ShowLineNumbers;
+    }
+    
+    private RenderFragment RenderDocumentText() => builder =>
+    {
+        if (string.IsNullOrEmpty(DocumentText)) return;
+        
+        if (ShowLineNumbers)
+        {
+            RenderWithLineNumbers(builder);
+        }
+        else
+        {
+            RenderWithoutLineNumbers(builder);
+        }
+    };
+    
+    private void RenderWithLineNumbers(RenderTreeBuilder builder)
+    {
+        var lines = DocumentText!.Split('\n');
+        var seq = 0;
+        
+        for (int lineNum = 0; lineNum < lines.Length; lineNum++)
+        {
+            var line = lines[lineNum];
+            
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "document-line");
+            
+            // Line number
+            builder.OpenElement(seq++, "span");
+            builder.AddAttribute(seq++, "class", "line-number");
+            builder.AddContent(seq++, (lineNum + 1).ToString());
+            builder.CloseElement();
+            
+            // Line content
+            builder.OpenElement(seq++, "span");
+            builder.AddAttribute(seq++, "class", "line-content");
+            builder.AddContent(seq++, line);
+            builder.CloseElement(); // line-content
+            builder.CloseElement(); // document-line
+        }
+    }
+    
+    private void RenderWithoutLineNumbers(RenderTreeBuilder builder)
+    {
+        var seq = 0;
+        builder.AddContent(seq++, DocumentText);
+    }
+}

@@ -1,0 +1,155 @@
+@using DocCoach.Web.Models.ViewModels
+
+<MudPaper Class="@($"pa-4 {Class}")" Elevation="@Elevation">
+    <MudStack Spacing="3">
+        @if (!string.IsNullOrEmpty(Title))
+        {
+            <MudText Typo="Typo.h6">@Title</MudText>
+        }
+        
+        @if (Comparisons != null && Comparisons.Count > 0)
+        {
+            @* Bar chart showing current vs previous *@
+            <MudChart ChartType="ChartType.Bar"
+                      ChartSeries="@_series"
+                      XAxisLabels="@_labels"
+                      Width="100%"
+                      Height="@Height"
+                      ChartOptions="@_chartOptions" />
+            
+            @* Category cards with delta indicators *@
+            <MudGrid Spacing="2" Class="mt-2">
+                @foreach (var comparison in Comparisons)
+                {
+                    <MudItem xs="12" sm="4">
+                        <MudPaper Class="pa-3" Elevation="1" Style="@GetCategoryBorderStyle(comparison)">
+                            <MudStack AlignItems="AlignItems.Center" Spacing="1">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    @comparison.DisplayName
+                                </MudText>
+                                
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                    <MudText Typo="Typo.h5" Color="@GetScoreColor(comparison.CurrentScore)">
+                                        @comparison.CurrentScore
+                                    </MudText>
+                                    
+                                    @if (comparison.PreviousScore > 0)
+                                    {
+                                        <MudChip T="string" 
+                                                 Size="MudBlazor.Size.Small" 
+                                                 Color="@GetDeltaColor(comparison.Direction)"
+                                                 Icon="@GetDeltaIcon(comparison.Direction)">
+                                            @comparison.FormattedChange
+                                        </MudChip>
+                                    }
+                                </MudStack>
+                                
+                                @if (comparison.PreviousScore > 0)
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                        was @comparison.PreviousScore
+                                    </MudText>
+                                }
+                            </MudStack>
+                        </MudPaper>
+                    </MudItem>
+                }
+            </MudGrid>
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="text-center py-4">
+                No comparison data available
+            </MudText>
+        }
+    </MudStack>
+</MudPaper>
+
+@code {
+    /// <summary>Chart title.</summary>
+    [Parameter] public string? Title { get; set; }
+    
+    /// <summary>Category comparisons to display.</summary>
+    [Parameter] public List<CategoryComparison>? Comparisons { get; set; }
+    
+    /// <summary>Chart height.</summary>
+    [Parameter] public string Height { get; set; } = "200px";
+    
+    /// <summary>Paper elevation.</summary>
+    [Parameter] public int Elevation { get; set; } = 2;
+    
+    /// <summary>Additional CSS classes.</summary>
+    [Parameter] public string? Class { get; set; }
+    
+    private List<ChartSeries> _series = new();
+    private string[] _labels = Array.Empty<string>();
+    private ChartOptions _chartOptions = new()
+    {
+        MaxNumYAxisTicks = 5,
+        YAxisLines = true,
+        YAxisTicks = 20
+    };
+    
+    protected override void OnParametersSet()
+    {
+        if (Comparisons != null && Comparisons.Count > 0)
+        {
+            _labels = Comparisons.Select(c => c.DisplayName).ToArray();
+            _series = new List<ChartSeries>
+            {
+                new ChartSeries
+                {
+                    Name = "Current",
+                    Data = Comparisons.Select(c => (double)c.CurrentScore).ToArray()
+                },
+                new ChartSeries
+                {
+                    Name = "Previous",
+                    Data = Comparisons.Select(c => (double)c.PreviousScore).ToArray()
+                }
+            };
+        }
+    }
+    
+    private Color GetScoreColor(int score)
+    {
+        return score switch
+        {
+            >= 80 => Color.Success,
+            >= 60 => Color.Warning,
+            _ => Color.Error
+        };
+    }
+    
+    private Color GetDeltaColor(ChangeDirection direction)
+    {
+        return direction switch
+        {
+            ChangeDirection.Improved => Color.Success,
+            ChangeDirection.Declined => Color.Error,
+            _ => Color.Default
+        };
+    }
+    
+    private string GetDeltaIcon(ChangeDirection direction)
+    {
+        return direction switch
+        {
+            ChangeDirection.Improved => Icons.Material.Filled.TrendingUp,
+            ChangeDirection.Declined => Icons.Material.Filled.TrendingDown,
+            _ => Icons.Material.Filled.TrendingFlat
+        };
+    }
+    
+    private string GetCategoryBorderStyle(CategoryComparison comparison)
+    {
+        var color = comparison.Direction switch
+        {
+            ChangeDirection.Improved => "#4caf50",
+            ChangeDirection.Declined => "#f44336",
+            _ => "#9e9e9e"
+        };
+        
+        return $"border-left: 4px solid {color};";
+    }
+}

@@ -1,0 +1,368 @@
+@page "/auditor/upload"
+@using DocCoach.Web.Models
+@using DocCoach.Web.Services.Interfaces
+@using DocCoach.Web.Services.Analyzers
+@using DocCoach.Web.State
+@inject IDocumentService DocumentService
+@inject IGuidelineService GuidelineService
+@inject IReviewService ReviewService
+@inject AppState AppState
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<PageTitle>Upload Document - Doc Coach</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-4">
+    <MudText Typo="Typo.h4" Class="mb-4">
+        <MudIcon Icon="@Icons.Material.Filled.CloudUpload" Class="mr-2" />
+        Upload Audit Report
+    </MudText>
+    
+    <MudPaper Class="pa-6" Elevation="2">
+        @if (_isUploading || _isProcessing)
+        {
+            <MudStack AlignItems="AlignItems.Center" Spacing="4">
+                <MudProgressCircular Color="Color.Primary" Indeterminate="@(_progress < 0)" Value="@_progress" Size="Size.Large" />
+                <MudText Typo="Typo.h6">@_statusMessage</MudText>
+                @if (!string.IsNullOrEmpty(_currentAnalyzerName))
+                {
+                    <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small">
+                        @_currentAnalyzerName
+                    </MudChip>
+                }
+                @if (_totalAnalyzers > 0 && _currentAnalyzerIndex > 0)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        Rule @_currentAnalyzerIndex of @_totalAnalyzers (@_progress% complete)
+                    </MudText>
+                }
+                else if (_progress >= 0)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">@_progress% complete</MudText>
+                }
+            </MudStack>
+        }
+        else
+        {
+            <MudForm @ref="_form" @bind-IsValid="_isFormValid">
+                @* File Upload Section *@
+                <MudText Typo="Typo.h6" Class="mb-2">Select Document</MudText>
+                <MudFileUpload T="Microsoft.AspNetCore.Components.Forms.IBrowserFile" 
+                               Accept=".pdf,.docx"
+                               FilesChanged="OnFileSelected"
+                               MaximumFileCount="1"
+                               Class="mb-4">
+                    <ActivatorContent>
+                        <MudPaper Height="120px" Outlined="true" Class="d-flex align-center justify-center" Style="border-style: dashed; cursor: pointer;">
+                            @if (_selectedFile == null)
+                            {
+                                <MudStack AlignItems="AlignItems.Center">
+                                    <MudIcon Icon="@Icons.Material.Filled.UploadFile" Size="Size.Large" Color="Color.Primary" />
+                                    <MudText>Click to select or drag a PDF/DOCX file here</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">Maximum size: 50 MB</MudText>
+                                </MudStack>
+                            }
+                            else
+                            {
+                                <MudStack AlignItems="AlignItems.Center">
+                                    <MudIcon Icon="@GetFileIcon()" Size="Size.Large" Color="Color.Success" />
+                                    <MudText>@_selectedFile.Name</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@GetFileSizeDisplay()</MudText>
+                                </MudStack>
+                            }
+                        </MudPaper>
+                    </ActivatorContent>
+                </MudFileUpload>
+                
+                @if (!string.IsNullOrEmpty(_fileError))
+                {
+                    <MudAlert Severity="Severity.Error" Class="mb-4">@_fileError</MudAlert>
+                }
+                
+                @* Document Review Name *@
+                <MudTextField T="string" 
+                              @bind-Value="_displayName"
+                              Label="Review Name (Optional)" 
+                              Variant="Variant.Outlined"
+                              MaxLength="200"
+                              Immediate="true"
+                              Class="mb-4"
+                              Placeholder="@(_selectedFile?.Name ?? "Enter a name for this review")"
+                              HelperText="Leave blank to use the file name" />
+                
+                @* Guideline Set Selection *@
+                <MudText Typo="Typo.h6" Class="mb-2">Select Guideline Set</MudText>
+                @if (_guidelineSets == null)
+                {
+                    <MudSkeleton Width="100%" Height="56px" Class="mb-4" />
+                }
+                else if (_guidelineSets.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Warning" Class="mb-4">
+                        No guideline sets available. Please contact an administrator.
+                    </MudAlert>
+                }
+                else
+                {
+                    <MudSelect T="string" 
+                               @bind-Value="_selectedGuidelineSetId"
+                               @bind-Value:after="OnGuidelineSetChanged"
+                               Label="Guideline Set" 
+                               Required="true"
+                               RequiredError="Please select a guideline set"
+                               Variant="Variant.Outlined"
+                               Class="mb-4"
+                               AdornmentIcon="@Icons.Material.Filled.Rule"
+                               AdornmentColor="Color.Primary">
+                        @foreach (var set in _guidelineSets)
+                        {
+                            <MudSelectItem Value="@set.Id">
+                                @set.Name @(set.IsDefault ? " (Default)" : "")
+                            </MudSelectItem>
+                        }
+                    </MudSelect>
+                    
+                    @if (!string.IsNullOrEmpty(_selectedGuidelineSetId))
+                    {
+                        var selectedSet = _guidelineSets.FirstOrDefault(g => g.Id == _selectedGuidelineSetId);
+                        if (selectedSet != null)
+                        {
+                            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+                                <MudText Typo="Typo.body2"><strong>@selectedSet.Name</strong></MudText>
+                                <MudText Typo="Typo.caption">@selectedSet.Description</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    @selectedSet.EnabledRules.Count() enabled rules
+                                </MudText>
+                            </MudAlert>
+                        }
+                    }
+                }
+                
+                @* Optional Notes *@
+                <MudTextField T="string" 
+                              @bind-Value="_notes"
+                              Label="Notes (Optional)" 
+                              Variant="Variant.Outlined"
+                              Lines="3"
+                              MaxLength="500"
+                              Counter="500"
+                              Immediate="true"
+                              Class="mb-4"
+                              HelperText="Add any notes about this document for reference" />
+                
+                @* Submit Button *@
+                <MudButton Variant="Variant.Filled" 
+                           Color="Color.Primary" 
+                           Size="Size.Large"
+                           FullWidth="true"
+                           StartIcon="@Icons.Material.Filled.PlayArrow"
+                           OnClick="UploadAndReview"
+                           Disabled="@(!CanSubmit())">
+                    Upload & Start Review
+                </MudButton>
+            </MudForm>
+        }
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private MudForm? _form;
+    private bool _isFormValid;
+    private Microsoft.AspNetCore.Components.Forms.IBrowserFile? _selectedFile;
+    private string? _selectedGuidelineSetId;
+    private string? _displayName;
+    private string? _notes;
+    private string? _fileError;
+    private IReadOnlyList<GuidelineSet>? _guidelineSets;
+    
+    private bool _isUploading;
+    private bool _isProcessing;
+    private int _progress = -1;
+    private string _statusMessage = "";
+    private string? _currentAnalyzerName;
+    private int _currentAnalyzerIndex;
+    private int _totalAnalyzers;
+    
+    private const long MaxFileSize = 50 * 1024 * 1024; // 50 MB
+    private static readonly string[] AllowedExtensions = [".pdf", ".docx"];
+    
+    protected override async Task OnInitializedAsync()
+    {
+        // Ensure user is in Auditor role
+        if (AppState.CurrentRole != UserRole.Auditor && AppState.CurrentRole != UserRole.None)
+        {
+            Navigation.NavigateTo("/");
+            return;
+        }
+        
+        if (AppState.CurrentRole == UserRole.None)
+        {
+            AppState.CurrentRole = UserRole.Auditor;
+        }
+        
+        // Load available guideline sets
+        _guidelineSets = await GuidelineService.GetAllAsync();
+
+        // Pre-select the last chosen guideline set if available, otherwise default
+        var preferredId = AppState.SelectedGuidelineSetId;
+        if (!string.IsNullOrWhiteSpace(preferredId) && _guidelineSets.Any(g => g.Id == preferredId))
+        {
+            _selectedGuidelineSetId = preferredId;
+        }
+        else
+        {
+            var defaultSet = _guidelineSets.FirstOrDefault(g => g.IsDefault);
+            if (defaultSet != null)
+            {
+                _selectedGuidelineSetId = defaultSet.Id;
+            }
+            else if (_guidelineSets.Count > 0)
+            {
+                _selectedGuidelineSetId = _guidelineSets.First().Id;
+            }
+        }
+
+        AppState.SelectedGuidelineSetId = _selectedGuidelineSetId;
+    }
+    
+    private void OnFileSelected(Microsoft.AspNetCore.Components.Forms.IBrowserFile file)
+    {
+        _fileError = null;
+        _selectedFile = file;
+        
+        // Validate file
+        var extension = Path.GetExtension(file.Name).ToLowerInvariant();
+        if (!AllowedExtensions.Contains(extension))
+        {
+            _fileError = $"File type '{extension}' is not supported. Please upload a PDF or DOCX file.";
+            _selectedFile = null;
+            return;
+        }
+        
+        if (file.Size > MaxFileSize)
+        {
+            var sizeMb = file.Size / (1024.0 * 1024.0);
+            _fileError = $"File size ({sizeMb:F1} MB) exceeds the maximum allowed size of 50 MB.";
+            _selectedFile = null;
+            return;
+        }
+    }
+    
+    private bool CanSubmit()
+    {
+        return _selectedFile != null 
+            && string.IsNullOrEmpty(_fileError) 
+            && !string.IsNullOrEmpty(_selectedGuidelineSetId);
+    }
+    
+    private async Task UploadAndReview()
+    {
+        var guidelineSetId = _selectedGuidelineSetId ?? AppState.SelectedGuidelineSetId;
+        if (_selectedFile == null || string.IsNullOrEmpty(guidelineSetId))
+            return;
+        
+        try
+        {
+            _isUploading = true;
+            _progress = 0;
+            _statusMessage = "Uploading document...";
+            _currentAnalyzerName = null;
+            _currentAnalyzerIndex = 0;
+            _totalAnalyzers = 0;
+            StateHasChanged();
+            
+            // Read file content
+            await using var stream = _selectedFile.OpenReadStream(MaxFileSize);
+            
+            _progress = 10;
+            StateHasChanged();
+            
+            // Upload the document
+            var document = await DocumentService.UploadAsync(
+                _selectedFile.Name,
+                _selectedFile.ContentType,
+                stream,
+                guidelineSetId,
+                _displayName);
+            
+            _progress = 20;
+            _statusMessage = "Extracting text from document...";
+            StateHasChanged();
+            
+            // Extract text
+            await DocumentService.ExtractTextAsync(document.Id);
+            
+            _progress = 30;
+            _isUploading = false;
+            _isProcessing = true;
+            _statusMessage = "Analyzing document...";
+            StateHasChanged();
+            
+            // Start AI review with rich progress callback
+            var review = await ReviewService.AnalyzeAsync(
+                document.Id,
+                guidelineSetId,
+                progress =>
+                {
+                    _statusMessage = progress.Message;
+                    _currentAnalyzerName = progress.CurrentAnalyzerName;
+                    _currentAnalyzerIndex = progress.CurrentAnalyzerIndex;
+                    _totalAnalyzers = progress.TotalAnalyzers;
+                    // Service already provides progress in 25-95 range, we add upload/extract progress (0-30)
+                    _progress = progress.PercentComplete;
+                    InvokeAsync(StateHasChanged);
+                });
+            
+            _progress = 100;
+            _statusMessage = "Review complete!";
+            _currentAnalyzerName = null;
+            StateHasChanged();
+            
+            await Task.Delay(500); // Brief pause to show completion
+            
+            // Navigate to results
+            Navigation.NavigateTo($"/auditor/review/{review.Id}");
+        }
+        catch (Exception ex)
+        {
+            _isUploading = false;
+            _isProcessing = false;
+            _progress = -1;
+            _currentAnalyzerName = null;
+            _currentAnalyzerIndex = 0;
+            _totalAnalyzers = 0;
+            
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+    
+    private string GetFileIcon()
+    {
+        if (_selectedFile == null) return Icons.Material.Filled.InsertDriveFile;
+        
+        var extension = Path.GetExtension(_selectedFile.Name).ToLowerInvariant();
+        return extension switch
+        {
+            ".pdf" => Icons.Material.Filled.PictureAsPdf,
+            ".docx" => Icons.Material.Filled.Description,
+            _ => Icons.Material.Filled.InsertDriveFile
+        };
+    }
+    
+    private string GetFileSizeDisplay()
+    {
+        if (_selectedFile == null) return "";
+        
+        var sizeBytes = _selectedFile.Size;
+        if (sizeBytes < 1024)
+            return $"{sizeBytes} B";
+        if (sizeBytes < 1024 * 1024)
+            return $"{sizeBytes / 1024.0:F1} KB";
+        return $"{sizeBytes / (1024.0 * 1024.0):F1} MB";
+    }
+
+    private void OnGuidelineSetChanged()
+    {
+        AppState.SelectedGuidelineSetId = _selectedGuidelineSetId;
+    }
+}

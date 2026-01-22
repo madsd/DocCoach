@@ -1,0 +1,174 @@
+@using DocCoach.Web.Models
+
+<MudCard Class="document-card-hover" Elevation="2" Style="cursor: pointer;" @onclick="OnCardClick">
+    <MudCardContent>
+        <MudStack Row="true" AlignItems="AlignItems.Start" Spacing="3">
+            @* File Icon *@
+            <MudIcon Icon="@GetFileIcon()" Size="Size.Large" Color="@GetStatusColor()" />
+            
+            @* Document Info *@
+            <MudStack Spacing="1" Style="flex-grow: 1; overflow: hidden;">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                    <MudText Typo="Typo.subtitle1" Style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        <strong>@Document.Name</strong>
+                    </MudText>
+                    <MudChip T="string" Size="Size.Small" Color="@GetStatusColor()" Variant="Variant.Filled">
+                        @GetStatusText()
+                    </MudChip>
+                </MudStack>
+                
+                <MudStack Row="true" Spacing="3" Class="mt-1">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        <MudIcon Icon="@Icons.Material.Filled.CalendarToday" Size="Size.Small" Class="mr-1" Style="vertical-align: middle;" />
+                        @Document.UploadedAt.ToString("MMM dd, yyyy HH:mm")
+                    </MudText>
+                    
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        <MudIcon Icon="@Icons.Material.Filled.Storage" Size="Size.Small" Class="mr-1" Style="vertical-align: middle;" />
+                        @GetFileSizeDisplay()
+                    </MudText>
+                </MudStack>
+                
+                @if (Review != null)
+                {
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mt-2">
+                        <MudProgressLinear Color="@GetScoreColor()" Value="@Review.OverallScore" Size="Size.Small" Rounded="true" Style="width: 100px;" />
+                        <MudText Typo="Typo.body2" Color="@GetScoreColor()">
+                            <strong>@Review.OverallScore</strong>/100
+                        </MudText>
+                        
+                        <MudDivider Vertical="true" FlexItem="true" Class="mx-2" />
+                        
+                        @if (Review.FeedbackItems.Any(f => f.Severity == FeedbackSeverity.Error))
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Text">
+                                @Review.FeedbackItems.Count(f => f.Severity == FeedbackSeverity.Error) errors
+                            </MudChip>
+                        }
+                        @if (Review.FeedbackItems.Any(f => f.Severity == FeedbackSeverity.Warning))
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text">
+                                @Review.FeedbackItems.Count(f => f.Severity == FeedbackSeverity.Warning) warnings
+                            </MudChip>
+                        }
+                    </MudStack>
+                }
+            </MudStack>
+        </MudStack>
+    </MudCardContent>
+    
+    @if (ShowActions)
+    {
+        <MudCardActions>
+            <MudButton Size="Size.Small" 
+                       Color="Color.Primary" 
+                       StartIcon="@Icons.Material.Filled.Visibility"
+                       OnClick="@(async () => await OnView.InvokeAsync(Document))">
+                View
+            </MudButton>
+            <MudButton Size="Size.Small" 
+                       Color="Color.Default" 
+                       StartIcon="@Icons.Material.Filled.FileDownload"
+                       OnClick="@(async () => await OnDownload.InvokeAsync(Document))">
+                Download
+            </MudButton>
+            <MudSpacer />
+            <MudIconButton Icon="@Icons.Material.Filled.Delete" 
+                           Size="Size.Small" 
+                           Color="Color.Error"
+                           OnClick="@(async () => await OnDelete.InvokeAsync(Document))" />
+        </MudCardActions>
+    }
+</MudCard>
+
+@code {
+    [Parameter, EditorRequired] 
+    public Document Document { get; set; } = null!;
+    
+    [Parameter] 
+    public Review? Review { get; set; }
+    
+    [Parameter] 
+    public bool ShowActions { get; set; } = true;
+    
+    [Parameter] 
+    public EventCallback<Document> OnView { get; set; }
+    
+    [Parameter] 
+    public EventCallback<Document> OnDownload { get; set; }
+    
+    [Parameter] 
+    public EventCallback<Document> OnDelete { get; set; }
+    
+    [Parameter]
+    public EventCallback<Document> OnClick { get; set; }
+    
+    private async Task OnCardClick()
+    {
+        if (OnClick.HasDelegate)
+        {
+            await OnClick.InvokeAsync(Document);
+        }
+        else if (OnView.HasDelegate)
+        {
+            await OnView.InvokeAsync(Document);
+        }
+    }
+    
+    private string GetFileIcon()
+    {
+        var extension = Path.GetExtension(Document.FileName).ToLowerInvariant();
+        return extension switch
+        {
+            ".pdf" => Icons.Material.Filled.PictureAsPdf,
+            ".docx" => Icons.Material.Filled.Description,
+            _ => Icons.Material.Filled.InsertDriveFile
+        };
+    }
+    
+    private Color GetStatusColor() => Document.Status switch
+    {
+        DocumentStatus.Uploaded => Color.Info,
+        DocumentStatus.Processing => Color.Warning,
+        DocumentStatus.Reviewed => Color.Success,
+        DocumentStatus.Completed => Color.Success,
+        DocumentStatus.Error => Color.Error,
+        DocumentStatus.Failed => Color.Error,
+        _ => Color.Default
+    };
+    
+    private string GetStatusText() => Document.Status switch
+    {
+        DocumentStatus.Uploaded => "Uploaded",
+        DocumentStatus.Processing => "Processing",
+        DocumentStatus.Extracting => "Extracting",
+        DocumentStatus.Reviewing => "Reviewing",
+        DocumentStatus.Reviewed => "Reviewed",
+        DocumentStatus.Completed => "Completed",
+        DocumentStatus.Error => "Error",
+        DocumentStatus.Failed => "Failed",
+        _ => "Unknown"
+    };
+    
+    private Color GetScoreColor()
+    {
+        if (Review == null) return Color.Default;
+        
+        return Review.OverallScore switch
+        {
+            >= 80 => Color.Success,
+            >= 60 => Color.Warning,
+            _ => Color.Error
+        };
+    }
+    
+    private string GetFileSizeDisplay()
+    {
+        var sizeBytes = Document.FileSizeBytes;
+        if (sizeBytes < 1024)
+            return $"{sizeBytes} B";
+        if (sizeBytes < 1024 * 1024)
+            return $"{sizeBytes / 1024.0:F1} KB";
+        return $"{sizeBytes / (1024.0 * 1024.0):F1} MB";
+    }
+}

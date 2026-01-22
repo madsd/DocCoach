@@ -1,0 +1,128 @@
+@using DocCoach.Web.Models
+
+<MudCard Elevation="1" Class="example-document-card">
+    <MudCardHeader>
+        <CardHeaderAvatar>
+            <MudAvatar Color="Color.Info" Variant="Variant.Outlined">
+                <MudIcon Icon="@GetFileIcon()" />
+            </MudAvatar>
+        </CardHeaderAvatar>
+        <CardHeaderContent>
+            <MudText Typo="Typo.subtitle1" Class="text-truncate" Style="max-width: 200px;">@Example.FileName</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                Uploaded @Example.UploadedAt.LocalDateTime.ToString("MMM d, yyyy")
+            </MudText>
+        </CardHeaderContent>
+        <CardHeaderActions>
+            <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small">
+                <MudMenuItem Icon="@Icons.Material.Filled.Download" OnClick="HandleDownload">
+                    Download
+                </MudMenuItem>
+                @if (ShowDeleteOption)
+                {
+                    <MudMenuItem Icon="@Icons.Material.Filled.Delete" OnClick="HandleDelete" IconColor="Color.Error">
+                        Delete
+                    </MudMenuItem>
+                }
+            </MudMenu>
+        </CardHeaderActions>
+    </MudCardHeader>
+    
+    @if (!string.IsNullOrEmpty(Example.Description))
+    {
+        <MudCardContent Class="pt-0">
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="example-description">
+                @Example.Description
+            </MudText>
+        </MudCardContent>
+    }
+    
+    <MudCardActions Class="justify-end">
+        <MudButton Variant="Variant.Text" 
+                   Color="Color.Primary" 
+                   Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Visibility"
+                   OnClick="HandlePreview">
+            Preview
+        </MudButton>
+        <MudButton Variant="Variant.Text" 
+                   Color="Color.Primary" 
+                   Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Download"
+                   OnClick="HandleDownload">
+            Download
+        </MudButton>
+    </MudCardActions>
+</MudCard>
+
+<style>
+    .example-document-card {
+        height: 100%;
+    }
+    
+    .example-description {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+</style>
+
+@code {
+    /// <summary>
+    /// The example document to display.
+    /// </summary>
+    [Parameter, EditorRequired]
+    public ExampleDocument Example { get; set; } = null!;
+    
+    /// <summary>
+    /// Whether to show the delete option in the menu.
+    /// </summary>
+    [Parameter]
+    public bool ShowDeleteOption { get; set; } = true;
+    
+    /// <summary>
+    /// Callback when download is clicked.
+    /// </summary>
+    [Parameter]
+    public EventCallback<ExampleDocument> OnDownload { get; set; }
+    
+    /// <summary>
+    /// Callback when preview is clicked.
+    /// </summary>
+    [Parameter]
+    public EventCallback<ExampleDocument> OnPreview { get; set; }
+    
+    /// <summary>
+    /// Callback when delete is clicked.
+    /// </summary>
+    [Parameter]
+    public EventCallback<ExampleDocument> OnDelete { get; set; }
+    
+    private string GetFileIcon()
+    {
+        var extension = Path.GetExtension(Example.FileName).ToLowerInvariant();
+        return extension switch
+        {
+            ".pdf" => Icons.Material.Filled.PictureAsPdf,
+            ".docx" or ".doc" => Icons.Material.Filled.Description,
+            _ => Icons.Material.Filled.InsertDriveFile
+        };
+    }
+    
+    private async Task HandleDownload()
+    {
+        await OnDownload.InvokeAsync(Example);
+    }
+    
+    private async Task HandlePreview()
+    {
+        await OnPreview.InvokeAsync(Example);
+    }
+    
+    private async Task HandleDelete()
+    {
+        await OnDelete.InvokeAsync(Example);
+    }
+}

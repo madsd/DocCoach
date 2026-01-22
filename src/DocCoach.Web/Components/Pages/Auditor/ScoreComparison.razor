@@ -1,0 +1,539 @@
+@page "/auditor/compare/{ReviewId}"
+@page "/auditor/compare/{ReviewId}/{CompareToId}"
+@using DocCoach.Web.Models
+@using DocCoach.Web.Models.ViewModels
+@using DocCoach.Web.Services.Interfaces
+@using DocCoach.Web.State
+@using DocCoach.Web.Components.Shared
+@inject IReviewService ReviewService
+@inject IDocumentService DocumentService
+@inject IGuidelineService GuidelineService
+@inject AppState AppState
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<PageTitle>Compare Reviews - Doc Coach</PageTitle>
+
+@if (_isLoading)
+{
+    <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+        <MudStack Spacing="4">
+            <MudSkeleton Width="300px" Height="40px" />
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudSkeleton Width="100%" Height="200px" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudSkeleton Width="100%" Height="200px" />
+                </MudItem>
+            </MudGrid>
+            <MudSkeleton Width="100%" Height="300px" />
+        </MudStack>
+    </MudContainer>
+}
+else if (_viewModel == null)
+{
+    <MudContainer MaxWidth="MaxWidth.Medium" Class="mt-8">
+        <MudAlert Severity="Severity.Error">
+            <MudText Typo="Typo.h6">Review Not Found</MudText>
+            <MudText>The requested review could not be found.</MudText>
+            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/auditor/history" Class="mt-2">
+                View Document History
+            </MudButton>
+        </MudAlert>
+    </MudContainer>
+}
+else
+{
+    <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+        @* Header *@
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
+            <MudStack>
+                <MudBreadcrumbs Items="_breadcrumbs" />
+                <MudText Typo="Typo.h4">
+                    <MudIcon Icon="@Icons.Material.Filled.Compare" Class="mr-2" />
+                    Compare Reviews
+                </MudText>
+            </MudStack>
+            
+            <MudStack Row="true" Spacing="2">
+                <MudButton Variant="Variant.Outlined" 
+                           Color="Color.Secondary" 
+                           StartIcon="@Icons.Material.Filled.ArrowBack"
+                           Href="@($"/auditor/review/{ReviewId}")">
+                    Back to Summary
+                </MudButton>
+            </MudStack>
+        </MudStack>
+        
+        @* Document Info Bar *@
+        <MudPaper Class="pa-3 mb-4" Elevation="1">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Filled.Description" />
+                    <MudText Typo="Typo.subtitle1">
+                        <strong>@(_viewModel.Document?.Name ?? "Unknown Document")</strong>
+                    </MudText>
+                </MudStack>
+                
+                @* Version Selector *@
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Compare to:</MudText>
+                    <MudSelect T="string" 
+                               Value="@_selectedCompareId" 
+                               ValueChanged="OnCompareVersionChanged"
+                               Dense="true"
+                               Margin="Margin.Dense"
+                               Style="min-width: 200px;"
+                               Disabled="@(!_viewModel.AvailableReviews.Any())">
+                        @if (!_viewModel.AvailableReviews.Any())
+                        {
+                            <MudSelectItem Value="@string.Empty">No other versions</MudSelectItem>
+                        }
+                        else
+                        {
+                            @foreach (var option in _viewModel.AvailableReviews)
+                            {
+                                <MudSelectItem Value="@option.ReviewId">
+                                    @option.Label (Score: @option.Score)
+                                </MudSelectItem>
+                            }
+                        }
+                    </MudSelect>
+                </MudStack>
+            </MudStack>
+        </MudPaper>
+        
+        @* Overall Score Comparison *@
+        <MudGrid Spacing="4" Class="mb-4">
+            @* Current Review Score *@
+            <MudItem xs="12" md="5">
+                <MudPaper Class="pa-4" Elevation="2">
+                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary" Class="mb-2">
+                        Current Review (@_viewModel.CurrentReview.CreatedAt.ToString("MMM dd, yyyy HH:mm"))
+                    </MudText>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
+                        <MudProgressCircular Color="@GetScoreColor(_viewModel.CurrentReview.OverallScore)" 
+                                              Value="@_viewModel.CurrentReview.OverallScore" 
+                                              Size="Size.Large"
+                                              StrokeWidth="8">
+                            <MudText Typo="Typo.h5" Style="@($"color: {GetColorHex(_viewModel.CurrentReview.OverallScore)};")">
+                                @_viewModel.CurrentReview.OverallScore
+                            </MudText>
+                        </MudProgressCircular>
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.h4" Color="@GetScoreColor(_viewModel.CurrentReview.OverallScore)">
+                                @GetScoreLabel(_viewModel.CurrentReview.OverallScore)
+                            </MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                @_viewModel.CurrentReview.FeedbackCount feedback items
+                            </MudText>
+                        </MudStack>
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+            
+            @* Delta Indicator *@
+            <MudItem xs="12" md="2">
+                <MudPaper Class="pa-4 d-flex flex-column align-center justify-center" Elevation="2" Style="height: 100%;">
+                    @if (_viewModel.PreviousReview != null)
+                    {
+                        <MudIcon Icon="@GetDeltaIcon(_viewModel.OverallDelta.Direction)" 
+                                 Size="Size.Large" 
+                                 Color="@GetDeltaColor(_viewModel.OverallDelta.Direction)" />
+                        <MudText Typo="Typo.h4" Color="@GetDeltaColor(_viewModel.OverallDelta.Direction)">
+                            @_viewModel.OverallDelta.FormattedChange
+                        </MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">points</MudText>
+                    }
+                    else
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.HelpOutline" Size="Size.Large" Color="Color.Secondary" />
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Align="Align.Center">
+                            Select a version to compare
+                        </MudText>
+                    }
+                </MudPaper>
+            </MudItem>
+            
+            @* Previous Review Score *@
+            <MudItem xs="12" md="5">
+                @if (_viewModel.PreviousReview != null)
+                {
+                    <MudPaper Class="pa-4" Elevation="2">
+                        <MudText Typo="Typo.subtitle2" Color="Color.Secondary" Class="mb-2">
+                            Previous Review (@_viewModel.PreviousReview.CreatedAt.ToString("MMM dd, yyyy HH:mm"))
+                        </MudText>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
+                            <MudProgressCircular Color="@GetScoreColor(_viewModel.PreviousReview.OverallScore)" 
+                                                  Value="@_viewModel.PreviousReview.OverallScore" 
+                                                  Size="Size.Large"
+                                                  StrokeWidth="8">
+                                <MudText Typo="Typo.h5" Style="@($"color: {GetColorHex(_viewModel.PreviousReview.OverallScore)};")">
+                                    @_viewModel.PreviousReview.OverallScore
+                                </MudText>
+                            </MudProgressCircular>
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.h4" Color="@GetScoreColor(_viewModel.PreviousReview.OverallScore)">
+                                    @GetScoreLabel(_viewModel.PreviousReview.OverallScore)
+                                </MudText>
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                    @_viewModel.PreviousReview.FeedbackCount feedback items
+                                </MudText>
+                            </MudStack>
+                        </MudStack>
+                    </MudPaper>
+                }
+                else
+                {
+                    <MudPaper Class="pa-4 d-flex flex-column align-center justify-center" Elevation="2" Style="height: 100%; min-height: 150px;">
+                        <MudIcon Icon="@Icons.Material.Filled.CompareArrows" Size="Size.Large" Color="Color.Secondary" />
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Align="Align.Center" Class="mt-2">
+                            @if (_viewModel.AvailableReviews.Any())
+                            {
+                                <text>Select a previous version to compare</text>
+                            }
+                            else
+                            {
+                                <text>No previous versions available for comparison</text>
+                            }
+                        </MudText>
+                    </MudPaper>
+                }
+            </MudItem>
+        </MudGrid>
+        
+        @* Category Comparison Chart *@
+        @if (_viewModel.PreviousReview != null && _viewModel.CategoryComparisons.Any())
+        {
+            <MudGrid Spacing="4">
+                <MudItem xs="12" lg="8">
+                    <ComparisonChart Title="Category Score Comparison"
+                                      Comparisons="@_viewModel.CategoryComparisons"
+                                      Height="250px" />
+                </MudItem>
+                
+                @* Feedback Changes Summary *@
+                <MudItem xs="12" lg="4">
+                    <MudPaper Class="pa-4" Elevation="2">
+                        <MudText Typo="Typo.h6" Class="mb-3">Feedback Changes</MudText>
+                        
+                        <MudSimpleTable Dense="true" Bordered="false" Hover="true">
+                            <thead>
+                                <tr>
+                                    <th>Metric</th>
+                                    <th class="text-right">Current</th>
+                                    <th class="text-right">Previous</th>
+                                    <th class="text-right">Change</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>
+                                        <MudIcon Icon="@Icons.Material.Filled.Error" Color="Color.Error" Size="Size.Small" Class="mr-1" />
+                                        Critical
+                                    </td>
+                                    <td class="text-right">@_viewModel.FeedbackChanges.CurrentErrors</td>
+                                    <td class="text-right">@_viewModel.FeedbackChanges.PreviousErrors</td>
+                                    <td class="text-right">
+                                        <MudText Color="@GetChangeColor(_viewModel.FeedbackChanges.ErrorChange, true)">
+                                            @FormatChange(_viewModel.FeedbackChanges.ErrorChange)
+                                        </MudText>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Warning" Size="Size.Small" Class="mr-1" />
+                                        Warnings
+                                    </td>
+                                    <td class="text-right">@_viewModel.FeedbackChanges.CurrentWarnings</td>
+                                    <td class="text-right">@_viewModel.FeedbackChanges.PreviousWarnings</td>
+                                    <td class="text-right">
+                                        <MudText Color="@GetChangeColor(_viewModel.FeedbackChanges.WarningChange, true)">
+                                            @FormatChange(_viewModel.FeedbackChanges.WarningChange)
+                                        </MudText>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        <MudIcon Icon="@Icons.Material.Filled.Summarize" Size="Size.Small" Class="mr-1" />
+                                        Total Items
+                                    </td>
+                                    <td class="text-right">@_viewModel.FeedbackChanges.CurrentTotal</td>
+                                    <td class="text-right">@_viewModel.FeedbackChanges.PreviousTotal</td>
+                                    <td class="text-right">
+                                        <MudText Color="@GetChangeColor(_viewModel.FeedbackChanges.TotalChange, true)">
+                                            @FormatChange(_viewModel.FeedbackChanges.TotalChange)
+                                        </MudText>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </MudSimpleTable>
+                        
+                        <MudDivider Class="my-3" />
+                        
+                        @* Summary Message *@
+                        <MudAlert Severity="@GetSummaryAlertSeverity()" Dense="true">
+                            @GetSummaryMessage()
+                        </MudAlert>
+                    </MudPaper>
+                </MudItem>
+            </MudGrid>
+        }
+        else if (!_viewModel.AvailableReviews.Any())
+        {
+            @* No Comparison Available *@
+            <MudAlert Severity="Severity.Info" Class="mb-4">
+                <MudText Typo="Typo.subtitle1">No Previous Versions</MudText>
+                <MudText Typo="Typo.body2">
+                    This is the only review for this document. Upload and review additional versions to enable comparison.
+                </MudText>
+                <MudButton Variant="Variant.Text" 
+                           Color="Color.Primary" 
+                           StartIcon="@Icons.Material.Filled.CloudUpload"
+                           Href="/auditor/upload"
+                           Class="mt-2">
+                    Upload New Version
+                </MudButton>
+            </MudAlert>
+        }
+        
+        @* Actions *@
+        <MudPaper Class="pa-4 mt-4" Elevation="2">
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap">
+                <MudText Typo="Typo.h6">Actions</MudText>
+                
+                <MudStack Row="true" Spacing="2">
+                    <MudButton Variant="Variant.Outlined" 
+                               StartIcon="@Icons.Material.Filled.ListAlt"
+                               Href="@($"/auditor/review/{ReviewId}")">
+                        View Current Feedback
+                    </MudButton>
+                    @if (_viewModel.PreviousReview != null)
+                    {
+                        <MudButton Variant="Variant.Outlined" 
+                                   StartIcon="@Icons.Material.Filled.ListAlt"
+                                   Href="@($"/auditor/review/{_selectedCompareId}")">
+                            View Previous Feedback
+                        </MudButton>
+                    }
+                    <MudButton Variant="Variant.Filled" 
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.CloudUpload"
+                               Href="/auditor/upload">
+                        Upload New Version
+                    </MudButton>
+                </MudStack>
+            </MudStack>
+        </MudPaper>
+    </MudContainer>
+}
+
+@code {
+    [Parameter] public string ReviewId { get; set; } = "";
+    [Parameter] public string? CompareToId { get; set; }
+    
+    private bool _isLoading = true;
+    private ReviewComparisonViewModel? _viewModel;
+    private string _selectedCompareId = "";
+    
+    private List<BreadcrumbItem> _breadcrumbs = [];
+    
+    protected override async Task OnInitializedAsync()
+    {
+        // Ensure user is in Auditor role
+        if (AppState.CurrentRole == UserRole.None)
+        {
+            AppState.CurrentRole = UserRole.Auditor;
+        }
+        
+        await LoadComparisonData();
+    }
+    
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!string.IsNullOrEmpty(CompareToId) && CompareToId != _selectedCompareId)
+        {
+            _selectedCompareId = CompareToId;
+            await LoadComparisonData();
+        }
+    }
+    
+    private async Task LoadComparisonData()
+    {
+        _isLoading = true;
+        StateHasChanged();
+        
+        try
+        {
+            var currentReview = await ReviewService.GetByIdAsync(ReviewId);
+            
+            if (currentReview != null)
+            {
+                var document = await DocumentService.GetByIdAsync(currentReview.DocumentId);
+                
+                // Get all reviews for this document
+                List<Review>? allReviews = null;
+                if (document != null)
+                {
+                    allReviews = (await ReviewService.GetAllByDocumentIdAsync(document.Id)).ToList();
+                }
+                
+                // Get the previous review to compare
+                Review? previousReview = null;
+                if (!string.IsNullOrEmpty(_selectedCompareId))
+                {
+                    previousReview = await ReviewService.GetByIdAsync(_selectedCompareId);
+                }
+                else if (!string.IsNullOrEmpty(CompareToId))
+                {
+                    _selectedCompareId = CompareToId;
+                    previousReview = await ReviewService.GetByIdAsync(CompareToId);
+                }
+                else if (allReviews != null && allReviews.Count > 1)
+                {
+                    // Default to the most recent previous review
+                    previousReview = allReviews
+                        .Where(r => r.Id != currentReview.Id && r.CreatedAt < currentReview.CreatedAt)
+                        .OrderByDescending(r => r.CreatedAt)
+                        .FirstOrDefault();
+                    
+                    if (previousReview != null)
+                    {
+                        _selectedCompareId = previousReview.Id;
+                    }
+                }
+                
+                _viewModel = ReviewComparisonViewModel.FromReviews(
+                    currentReview,
+                    previousReview,
+                    document,
+                    allReviews);
+                
+                _breadcrumbs = new List<BreadcrumbItem>
+                {
+                    new BreadcrumbItem("Home", href: "/"),
+                    new BreadcrumbItem("Documents", href: "/auditor/history"),
+                    new BreadcrumbItem(document?.FileName ?? "Review", href: $"/auditor/review/{ReviewId}"),
+                    new BreadcrumbItem("Compare", href: null, disabled: true)
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading comparison: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+    
+    private async Task OnCompareVersionChanged(string newValue)
+    {
+        _selectedCompareId = newValue;
+        await LoadComparisonData();
+    }
+    
+    private Color GetScoreColor(int score)
+    {
+        return score switch
+        {
+            >= 80 => Color.Success,
+            >= 60 => Color.Warning,
+            _ => Color.Error
+        };
+    }
+    
+    private string GetColorHex(int score)
+    {
+        return score switch
+        {
+            >= 80 => "#4caf50",
+            >= 60 => "#ff9800",
+            _ => "#f44336"
+        };
+    }
+    
+    private string GetScoreLabel(int score)
+    {
+        return score switch
+        {
+            >= 90 => "Excellent",
+            >= 80 => "Good",
+            >= 70 => "Satisfactory",
+            >= 60 => "Fair",
+            >= 50 => "Poor",
+            _ => "Critical"
+        };
+    }
+    
+    private Color GetDeltaColor(ChangeDirection direction)
+    {
+        return direction switch
+        {
+            ChangeDirection.Improved => Color.Success,
+            ChangeDirection.Declined => Color.Error,
+            _ => Color.Default
+        };
+    }
+    
+    private string GetDeltaIcon(ChangeDirection direction)
+    {
+        return direction switch
+        {
+            ChangeDirection.Improved => Icons.Material.Filled.TrendingUp,
+            ChangeDirection.Declined => Icons.Material.Filled.TrendingDown,
+            _ => Icons.Material.Filled.TrendingFlat
+        };
+    }
+    
+    private Color GetChangeColor(int change, bool invertLogic = false)
+    {
+        // For feedback counts, lower is better (invertLogic = true)
+        if (invertLogic)
+        {
+            return change < 0 ? Color.Success 
+                 : change > 0 ? Color.Error 
+                 : Color.Default;
+        }
+        
+        return change > 0 ? Color.Success 
+             : change < 0 ? Color.Error 
+             : Color.Default;
+    }
+    
+    private string FormatChange(int change)
+    {
+        return change > 0 ? $"+{change}" : change.ToString();
+    }
+    
+    private Severity GetSummaryAlertSeverity()
+    {
+        if (_viewModel == null || _viewModel.PreviousReview == null)
+            return Severity.Info;
+        
+        return _viewModel.OverallDelta.Direction switch
+        {
+            ChangeDirection.Improved => Severity.Success,
+            ChangeDirection.Declined => Severity.Warning,
+            _ => Severity.Info
+        };
+    }
+    
+    private string GetSummaryMessage()
+    {
+        if (_viewModel == null || _viewModel.PreviousReview == null)
+            return "Select a previous version to see comparison.";
+        
+        var delta = _viewModel.OverallDelta;
+        
+        return delta.Direction switch
+        {
+            ChangeDirection.Improved => $"Great progress! The overall score improved by {delta.Change} points.",
+            ChangeDirection.Declined => $"The overall score decreased by {Math.Abs(delta.Change)} points. Review the feedback to identify areas for improvement.",
+            _ => "The overall score remained unchanged between versions."
+        };
+    }
+}

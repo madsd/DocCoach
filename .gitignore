@@ -1,0 +1,74 @@
+# .NET / C#
+bin/
+obj/
+out/
+*.user
+*.userosscache
+*.suo
+*.userprefs
+*.sln.docstates
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+build/
+publish/
+
+# NuGet packages
+*.nupkg
+**/packages/*
+!**/packages/build/
+
+# IDE
+.vs/
+.idea/
+*.code-workspace
+
+# Aspire
+*.dcproj.user
+
+# Environment files
+.env
+.env.*
+appsettings.Development.json
+appsettings.*.local.json
+secrets.json
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*~
+
+# User-specific files
+launchSettings.json
+
+# Test results
+TestResults/
+coverage/
+
+# Playwright MCP
+.playwright-mcp/
+
+# Azurite local storage emulator
+__azurite_db*.json
+__blobstorage__/
+__queuestorage__/
+__tablestorage__/
+AzuriteConfig/
+
+# Azure Developer CLI
+.azure/
+
+# Demo data (generated)
+data/files/

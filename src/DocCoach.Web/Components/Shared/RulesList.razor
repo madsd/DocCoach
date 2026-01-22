@@ -1,0 +1,130 @@
+@using DocCoach.Web.Models
+
+<MudDropContainer T="Rule" 
+                  Items="@Rules.ToList()" 
+                  ItemsSelector="@((item, zone) => true)"
+                  ItemDropped="ItemUpdated"
+                  Class="d-flex flex-column">
+    <ChildContent>
+        <MudDropZone T="Rule" Identifier="rules-zone" Class="d-flex flex-column gap-2">
+            @foreach (var rule in Rules.OrderBy(r => r.Order))
+            {
+                <MudPaper Elevation="1" Class="pa-3 rule-item">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+                            <MudIcon Icon="@Icons.Material.Filled.DragIndicator" 
+                                     Color="Color.Default" 
+                                     Class="drag-handle cursor-grab" />
+                            
+                            <MudStack Spacing="0">
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                    <MudChip T="string" 
+                                             Size="Size.Small" 
+                                             Color="@GetDimensionColor(rule.EffectiveDimension)"
+                                             Variant="Variant.Filled">
+                                        @rule.EffectiveDimension.GetDisplayName()
+                                    </MudChip>
+                                    <MudChip T="string" 
+                                             Size="Size.Small" 
+                                             Color="Color.Default"
+                                             Variant="Variant.Outlined">
+                                        @rule.RuleType.GetDisplayName()
+                                    </MudChip>
+                                    <MudText Typo="Typo.subtitle1">@rule.Name</MudText>
+                                    @if (!rule.IsEnabled)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Default">Disabled</MudChip>
+                                    }
+                                </MudStack>
+                                
+                                @if (!string.IsNullOrEmpty(rule.Description))
+                                {
+                                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="text-truncate" Style="max-width: 600px;">
+                                        @rule.Description
+                                    </MudText>
+                                }
+                            </MudStack>
+                        </MudStack>
+                        
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                            <MudTooltip Text="Weight">
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">
+                                    <MudIcon Icon="@Icons.Material.Filled.Balance" Size="Size.Small" Class="mr-1" />
+                                    @rule.Weight
+                                </MudChip>
+                            </MudTooltip>
+                            
+                            <MudTooltip Text="Edit rule">
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit" 
+                                               Size="Size.Small"
+                                               OnClick="@(() => OnEdit.InvokeAsync(rule))" />
+                            </MudTooltip>
+                            
+                            <MudTooltip Text="Delete rule">
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" 
+                                               Size="Size.Small"
+                                               Color="Color.Error"
+                                               OnClick="@(() => OnDelete.InvokeAsync(rule))" />
+                            </MudTooltip>
+                        </MudStack>
+                    </MudStack>
+                </MudPaper>
+            }
+        </MudDropZone>
+    </ChildContent>
+</MudDropContainer>
+
+<style>
+    .rule-item {
+        transition: box-shadow 0.2s ease;
+    }
+    
+    .rule-item:hover {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    
+    .drag-handle:hover {
+        cursor: grab;
+    }
+    
+    .drag-handle:active {
+        cursor: grabbing;
+    }
+</style>
+
+@code {
+    [Parameter]
+    public IEnumerable<Rule> Rules { get; set; } = Enumerable.Empty<Rule>();
+    
+    [Parameter]
+    public EventCallback<Rule> OnEdit { get; set; }
+    
+    [Parameter]
+    public EventCallback<Rule> OnDelete { get; set; }
+    
+    [Parameter]
+    public EventCallback<List<Rule>> OnReorder { get; set; }
+    
+    private async Task ItemUpdated(MudItemDropInfo<Rule> dropItem)
+    {
+        if (dropItem.Item != null)
+        {
+            var list = Rules.ToList();
+            list.Remove(dropItem.Item);
+            list.Insert(dropItem.IndexInZone, dropItem.Item);
+            await OnReorder.InvokeAsync(list);
+        }
+    }
+    
+    private Color GetDimensionColor(ReviewDimension dimension) => dimension switch
+    {
+        ReviewDimension.Language => Color.Primary,
+        ReviewDimension.Clarity => Color.Info,
+        ReviewDimension.Completeness => Color.Success,
+        ReviewDimension.FactualSupport => Color.Warning,
+        ReviewDimension.Compliance => Color.Secondary,
+        ReviewDimension.ToneAndStyle => Color.Tertiary,
+        ReviewDimension.Structure => Color.Dark,
+        _ => Color.Default
+    };
+}

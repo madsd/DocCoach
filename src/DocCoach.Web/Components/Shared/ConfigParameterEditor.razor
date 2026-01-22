@@ -1,0 +1,264 @@
+@using DocCoach.Web.Models
+@using System.Text.Json
+
+<MudStack Spacing="3">
+    @if (Parameters.Any())
+    {
+        <MudText Typo="Typo.subtitle2" Color="Color.Primary">Configuration</MudText>
+        
+        @foreach (var param in Parameters)
+        {
+            <MudStack Spacing="1">
+                @switch (param.Type)
+                {
+                    case ConfigParameterType.Integer:
+                        <MudText Typo="Typo.body2">@param.DisplayName: @GetIntValue(param.Name, param.DefaultValue)</MudText>
+                        <MudSlider T="int"
+                                   Value="@GetIntValue(param.Name, param.DefaultValue)"
+                                   ValueChanged="@(v => SetValue(param.Name, v))"
+                                   Min="@GetIntOrDefault(param.MinValue, 0)"
+                                   Max="@GetIntOrDefault(param.MaxValue, 100)"
+                                   Step="1"
+                                   Color="Color.Primary"
+                                   Size="Size.Small" />
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@param.Description</MudText>
+                        break;
+                        
+                    case ConfigParameterType.Percentage:
+                        <MudText Typo="Typo.body2">@param.DisplayName: @GetIntValue(param.Name, param.DefaultValue)%</MudText>
+                        <MudSlider T="int"
+                                   Value="@GetIntValue(param.Name, param.DefaultValue)"
+                                   ValueChanged="@(v => SetValue(param.Name, v))"
+                                   Min="0"
+                                   Max="100"
+                                   Step="5"
+                                   Color="Color.Primary"
+                                   Size="Size.Small" />
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@param.Description</MudText>
+                        break;
+                        
+                    case ConfigParameterType.Decimal:
+                        <MudNumericField T="decimal"
+                                         Label="@param.DisplayName"
+                                         Value="@GetDecimalValue(param.Name, param.DefaultValue)"
+                                         ValueChanged="@((decimal v) => SetValue(param.Name, v))"
+                                         Min="@(GetDecimalOrDefault(param.MinValue) ?? decimal.MinValue)"
+                                         Max="@(GetDecimalOrDefault(param.MaxValue) ?? decimal.MaxValue)"
+                                         Variant="Variant.Outlined"
+                                         HelperText="@param.Description" />
+                        break;
+                        
+                    case ConfigParameterType.String:
+                        <MudTextField T="string"
+                                      Label="@param.DisplayName"
+                                      Value="@GetStringValue(param.Name, param.DefaultValue)"
+                                      ValueChanged="@(v => SetValue(param.Name, v))"
+                                      Variant="Variant.Outlined"
+                                      HelperText="@param.Description"
+                                      Required="@param.IsRequired" />
+                        break;
+                        
+                    case ConfigParameterType.Text:
+                        <MudTextField T="string"
+                                      Label="@param.DisplayName"
+                                      Value="@GetStringValue(param.Name, param.DefaultValue)"
+                                      ValueChanged="@(v => SetValue(param.Name, v))"
+                                      Variant="Variant.Outlined"
+                                      Lines="5"
+                                      AutoGrow="true"
+                                      MaxLines="10"
+                                      HelperText="@param.Description" />
+                        break;
+                        
+                    case ConfigParameterType.Boolean:
+                        <MudSwitch T="bool"
+                                   Checked="@GetBoolValue(param.Name, param.DefaultValue)"
+                                   CheckedChanged="@((bool v) => SetValue(param.Name, v))"
+                                   Label="@param.DisplayName"
+                                   Color="Color.Primary" />
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@param.Description</MudText>
+                        break;
+                        
+                    case ConfigParameterType.Enum:
+                        <MudSelect T="string"
+                                   Label="@param.DisplayName"
+                                   Value="@GetStringValue(param.Name, param.DefaultValue)"
+                                   ValueChanged="@(v => SetValue(param.Name, v))"
+                                   Variant="Variant.Outlined"
+                                   HelperText="@param.Description">
+                            @if (param.Options != null)
+                            {
+                                @foreach (var option in param.Options)
+                                {
+                                    <MudSelectItem Value="@option">@option</MudSelectItem>
+                                }
+                            }
+                        </MudSelect>
+                        break;
+                }
+            </MudStack>
+        }
+    }
+    else
+    {
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" Class="mr-1" />
+            This rule type has no configurable parameters.
+        </MudText>
+    }
+</MudStack>
+
+@code {
+    /// <summary>
+    /// The configuration parameters to render.
+    /// </summary>
+    [Parameter]
+    public IReadOnlyList<ConfigParameter> Parameters { get; set; } = Array.Empty<ConfigParameter>();
+    
+    /// <summary>
+    /// Current configuration as JSON string.
+    /// </summary>
+    [Parameter]
+    public string? ConfigurationJson { get; set; }
+    
+    /// <summary>
+    /// Callback when configuration changes.
+    /// </summary>
+    [Parameter]
+    public EventCallback<string> ConfigurationJsonChanged { get; set; }
+    
+    private Dictionary<string, object?> _values = new();
+    private bool _initialized = false;
+    
+    protected override void OnParametersSet()
+    {
+        if (!_initialized || ConfigurationJson != _lastJson)
+        {
+            ParseConfiguration();
+            _initialized = true;
+        }
+    }
+    
+    private string? _lastJson;
+    
+    private void ParseConfiguration()
+    {
+        _lastJson = ConfigurationJson;
+        _values.Clear();
+        
+        if (!string.IsNullOrEmpty(ConfigurationJson))
+        {
+            try
+            {
+                var parsed = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(ConfigurationJson);
+                if (parsed != null)
+                {
+                    foreach (var (key, element) in parsed)
+                    {
+                        _values[key] = ConvertJsonElement(element);
+                    }
+                }
+            }
+            catch
+            {
+                // Invalid JSON, start fresh
+            }
+        }
+        
+        // Apply defaults for missing values
+        foreach (var param in Parameters)
+        {
+            if (!_values.ContainsKey(param.Name) && param.DefaultValue != null)
+            {
+                _values[param.Name] = param.DefaultValue;
+            }
+        }
+    }
+    
+    private object? ConvertJsonElement(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number => element.TryGetInt32(out var i) ? i : element.GetDecimal(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => null
+        };
+    }
+    
+    private void SetValue(string name, object? value)
+    {
+        _values[name] = value;
+        NotifyChanged();
+    }
+    
+    private async void NotifyChanged()
+    {
+        var json = JsonSerializer.Serialize(_values, new JsonSerializerOptions { WriteIndented = false });
+        _lastJson = json;
+        await ConfigurationJsonChanged.InvokeAsync(json);
+    }
+    
+    private int GetIntValue(string name, object? defaultValue)
+    {
+        if (_values.TryGetValue(name, out var value))
+        {
+            return value switch
+            {
+                int i => i,
+                decimal d => (int)d,
+                _ => defaultValue as int? ?? 0
+            };
+        }
+        return defaultValue as int? ?? 0;
+    }
+    
+    private decimal GetDecimalValue(string name, object? defaultValue)
+    {
+        if (_values.TryGetValue(name, out var value))
+        {
+            return value switch
+            {
+                decimal d => d,
+                int i => i,
+                _ => defaultValue as decimal? ?? 0m
+            };
+        }
+        return defaultValue as decimal? ?? 0m;
+    }
+    
+    private string GetStringValue(string name, object? defaultValue)
+    {
+        if (_values.TryGetValue(name, out var value))
+        {
+            return value?.ToString() ?? defaultValue?.ToString() ?? "";
+        }
+        return defaultValue?.ToString() ?? "";
+    }
+    
+    private bool GetBoolValue(string name, object? defaultValue)
+    {
+        if (_values.TryGetValue(name, out var value))
+        {
+            return value as bool? ?? defaultValue as bool? ?? false;
+        }
+        return defaultValue as bool? ?? false;
+    }
+    
+    private int GetIntOrDefault(object? value, int defaultValue) =>
+        value switch
+        {
+            int i => i,
+            decimal d => (int)d,
+            _ => defaultValue
+        };
+    
+    private decimal? GetDecimalOrDefault(object? value) =>
+        value switch
+        {
+            decimal d => d,
+            int i => i,
+            _ => null
+        };
+}

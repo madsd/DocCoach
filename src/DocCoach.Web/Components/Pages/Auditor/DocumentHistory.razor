@@ -1,0 +1,244 @@
+@page "/auditor/history"
+@using DocCoach.Web.Models
+@using DocCoach.Web.Services.Interfaces
+@using DocCoach.Web.State
+@using DocCoach.Web.Components.Shared
+@inject IDocumentService DocumentService
+@inject IReviewService ReviewService
+@inject AppState AppState
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Document History - Doc Coach</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    @* Header *@
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
+        <MudText Typo="Typo.h4">
+            <MudIcon Icon="@Icons.Material.Filled.History" Class="mr-2" />
+            Document History
+        </MudText>
+        
+        <MudButton Variant="Variant.Filled" 
+                   Color="Color.Primary" 
+                   StartIcon="@Icons.Material.Filled.CloudUpload"
+                   Href="/auditor/upload">
+            Upload New Document
+        </MudButton>
+    </MudStack>
+    
+    @* Filters *@
+    <MudPaper Class="pa-3 mb-4" Elevation="1">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+            <MudTextField T="string" 
+                          @bind-Value="_searchQuery"
+                          Placeholder="Search documents..."
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true"
+                          Clearable="true"
+                          Style="max-width: 300px;" />
+            
+            <MudSelect T="DocumentStatus?" 
+                       @bind-Value="_statusFilter"
+                       Label="Status"
+                       Clearable="true"
+                       Style="max-width: 150px;">
+                @foreach (DocumentStatus status in Enum.GetValues<DocumentStatus>())
+                {
+                    <MudSelectItem Value="@((DocumentStatus?)status)">@status</MudSelectItem>
+                }
+            </MudSelect>
+            
+            <MudSpacer />
+            
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                @FilteredDocuments.Count() document(s)
+            </MudText>
+        </MudStack>
+    </MudPaper>
+    
+    @* Document List *@
+    @if (_isLoading)
+    {
+        <MudStack Spacing="3">
+            @for (int i = 0; i < 3; i++)
+            {
+                <MudSkeleton Width="100%" Height="100px" />
+            }
+        </MudStack>
+    }
+    else if (_documents == null || _documents.Count == 0)
+    {
+        <MudPaper Class="pa-8 text-center" Elevation="2">
+            <MudIcon Icon="@Icons.Material.Filled.FolderOpen" Size="Size.Large" Color="Color.Secondary" Class="mb-4" />
+            <MudText Typo="Typo.h6" Color="Color.Secondary">No Documents Yet</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                Upload your first audit report to get started.
+            </MudText>
+            <MudButton Variant="Variant.Filled" 
+                       Color="Color.Primary" 
+                       StartIcon="@Icons.Material.Filled.CloudUpload"
+                       Href="/auditor/upload">
+                Upload Document
+            </MudButton>
+        </MudPaper>
+    }
+    else if (!FilteredDocuments.Any())
+    {
+        <MudAlert Severity="Severity.Info">
+            No documents match your search criteria. Try adjusting your filters.
+        </MudAlert>
+    }
+    else
+    {
+        <MudStack Spacing="3">
+            @foreach (var document in FilteredDocuments)
+            {
+                var review = _reviews.GetValueOrDefault(document.Id);
+                
+                <DocumentCard Document="@document" 
+                              Review="@review"
+                              ShowActions="true"
+                              OnClick="@(doc => ViewDocument(doc))"
+                              OnView="@(doc => ViewDocument(doc))"
+                              OnDownload="@(doc => DownloadDocument(doc))"
+                              OnDelete="@(doc => DeleteDocument(doc))" />
+            }
+        </MudStack>
+    }
+</MudContainer>
+
+@code {
+    private bool _isLoading = true;
+    private IReadOnlyList<Document>? _documents;
+    private Dictionary<string, Review> _reviews = new();
+    
+    private string _searchQuery = "";
+    private DocumentStatus? _statusFilter;
+    
+    private IEnumerable<Document> FilteredDocuments
+    {
+        get
+        {
+            if (_documents == null) return [];
+            
+            var query = _documents.AsEnumerable();
+            
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                query = query.Where(d => 
+                    d.Name.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                    d.FileName.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase));
+            }
+            
+            if (_statusFilter.HasValue)
+            {
+                query = query.Where(d => d.Status == _statusFilter.Value);
+            }
+            
+            return query.OrderByDescending(d => d.UploadedAt);
+        }
+    }
+    
+    protected override async Task OnInitializedAsync()
+    {
+        // Ensure user is in Auditor role
+        if (AppState.CurrentRole == UserRole.None)
+        {
+            AppState.CurrentRole = UserRole.Auditor;
+        }
+        
+        await LoadData();
+    }
+    
+    private async Task LoadData()
+    {
+        _isLoading = true;
+        StateHasChanged();
+        
+        try
+        {
+            // Load documents
+            _documents = await DocumentService.GetAllAsync();
+            
+            // Load reviews for each document
+            _reviews.Clear();
+            foreach (var document in _documents)
+            {
+                var review = await ReviewService.GetByDocumentIdAsync(document.Id);
+                if (review != null)
+                {
+                    _reviews[document.Id] = review;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading documents: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+    
+    private void ViewDocument(Document document)
+    {
+        var review = _reviews.GetValueOrDefault(document.Id);
+        
+        if (review != null)
+        {
+            Navigation.NavigateTo($"/auditor/review/{review.Id}");
+        }
+        else if (document.Status == DocumentStatus.Uploaded)
+        {
+            // Document uploaded but not reviewed - navigate to upload page
+            Snackbar.Add("This document hasn't been reviewed yet.", Severity.Info);
+            Navigation.NavigateTo("/auditor/upload");
+        }
+        else
+        {
+            Snackbar.Add("No review available for this document.", Severity.Warning);
+        }
+    }
+    
+    private void DownloadDocument(Document document)
+    {
+        Snackbar.Add("Download functionality coming soon!", Severity.Info);
+    }
+    
+    private async Task DeleteDocument(Document document)
+    {
+        var parameters = new DialogParameters<ConfirmDialog>
+        {
+            { x => x.Title, "Delete Document?" },
+            { x => x.Message, $"Are you sure you want to delete \"{document.FileName}\"? This action cannot be undone." },
+            { x => x.ConfirmText, "Delete" },
+            { x => x.ConfirmColor, Color.Error },
+            { x => x.Icon, Icons.Material.Filled.Delete },
+            { x => x.IconColor, Color.Error }
+        };
+        
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Small };
+        
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Delete Document", parameters, options);
+        var result = await dialog.Result;
+        
+        if (result != null && !result.Canceled)
+        {
+            try
+            {
+                await DocumentService.DeleteAsync(document.Id);
+                Snackbar.Add("Document deleted successfully.", Severity.Success);
+                await LoadData();
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error deleting document: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+}

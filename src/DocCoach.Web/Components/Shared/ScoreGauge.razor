@@ -1,0 +1,127 @@
+@using DocCoach.Web.Models
+
+<MudPaper Class="@($"pa-4 {Class}")" Elevation="@Elevation" Style="@Style">
+    <MudStack AlignItems="AlignItems.Center" Spacing="1">
+        @if (!string.IsNullOrEmpty(Title))
+        {
+            <MudText Typo="Typo.subtitle2" Color="Color.Secondary">@Title</MudText>
+        }
+        
+        <MudText Typo="@GetScoreTypo()" Style="@($"color: {GetColorHex()}; font-weight: 600;")">
+            @Score
+        </MudText>
+        
+        @if (!string.IsNullOrEmpty(Label))
+        {
+            <MudText Typo="Typo.body2" Color="@GetScoreColor()">@Label</MudText>
+        }
+        else if (ShowDefaultLabel)
+        {
+            <MudText Typo="Typo.body2" Color="@GetScoreColor()">@GetDefaultLabel()</MudText>
+        }
+        
+        @if (ShowDelta && Delta != 0)
+        {
+            <MudChip T="string" 
+                     Size="MudBlazor.Size.Small" 
+                     Color="@GetDeltaColor()"
+                     Icon="@GetDeltaIcon()">
+                @GetDeltaText()
+            </MudChip>
+        }
+    </MudStack>
+</MudPaper>
+
+@code {
+    /// <summary>Title displayed above the gauge.</summary>
+    [Parameter] public string? Title { get; set; }
+    
+    /// <summary>Score value (0-100).</summary>
+    [Parameter] public int Score { get; set; }
+    
+    /// <summary>Optional label below the score.</summary>
+    [Parameter] public string? Label { get; set; }
+    
+    /// <summary>Show default quality label if no label specified.</summary>
+    [Parameter] public bool ShowDefaultLabel { get; set; } = true;
+    
+    /// <summary>Score change from previous (for delta indicator).</summary>
+    [Parameter] public int Delta { get; set; }
+    
+    /// <summary>Show delta indicator chip.</summary>
+    [Parameter] public bool ShowDelta { get; set; } = false;
+    
+    /// <summary>Size of the score text.</summary>
+    [Parameter] public Size Size { get; set; } = Size.Large;
+    
+    /// <summary>Paper elevation.</summary>
+    [Parameter] public int Elevation { get; set; } = 2;
+    
+    /// <summary>Additional CSS classes.</summary>
+    [Parameter] public string? Class { get; set; }
+    
+    /// <summary>Additional inline styles.</summary>
+    [Parameter] public string? Style { get; set; }
+    
+    /// <summary>Click callback.</summary>
+    [Parameter] public EventCallback OnClick { get; set; }
+    
+    private Color GetScoreColor()
+    {
+        return Score switch
+        {
+            >= 80 => Color.Success,
+            >= 60 => Color.Warning,
+            _ => Color.Error
+        };
+    }
+    
+    private string GetColorHex()
+    {
+        return Score switch
+        {
+            >= 80 => "#4caf50",
+            >= 60 => "#ff9800",
+            _ => "#f44336"
+        };
+    }
+    
+    private Typo GetScoreTypo()
+    {
+        return Size switch
+        {
+            Size.Small => Typo.body1,
+            Size.Medium => Typo.h6,
+            Size.Large => Typo.h4,
+            _ => Typo.h5
+        };
+    }
+    
+    private string GetDefaultLabel()
+    {
+        return Score switch
+        {
+            >= 90 => "Excellent",
+            >= 80 => "Good",
+            >= 70 => "Satisfactory",
+            >= 60 => "Fair",
+            >= 50 => "Poor",
+            _ => "Critical"
+        };
+    }
+    
+    private Color GetDeltaColor()
+    {
+        return Delta > 0 ? Color.Success : Color.Error;
+    }
+    
+    private string GetDeltaIcon()
+    {
+        return Delta > 0 ? Icons.Material.Filled.TrendingUp : Icons.Material.Filled.TrendingDown;
+    }
+    
+    private string GetDeltaText()
+    {
+        return Delta > 0 ? $"+{Delta}" : Delta.ToString();
+    }
+}

@@ -1,0 +1,156 @@
+@using DocCoach.Web.Models
+@inject IJSRuntime JSRuntime
+
+<MudCard Class="mb-3" Outlined="true" Style="@GetBorderStyle()">
+    <MudCardContent>
+        <MudStack Row="true" AlignItems="AlignItems.Start" Spacing="3">
+            @* Severity Icon *@
+            <MudTooltip Text="@Item.Severity.ToString()">
+                <MudIcon Icon="@GetSeverityIcon()" Color="@GetSeverityColor()" Size="Size.Medium" />
+            </MudTooltip>
+            
+            @* Content *@
+            <MudStack Spacing="1" Style="flex-grow: 1;">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                    <MudText Typo="Typo.subtitle1">
+                        <strong>@Item.Title</strong>
+                    </MudText>
+                    <MudChip T="string" Size="Size.Small" Color="@GetDimensionColor()" Variant="Variant.Outlined">
+                        @Item.EffectiveDimension.GetDisplayName()
+                    </MudChip>
+                </MudStack>
+                
+                <MudText Typo="Typo.body2">@Item.Description</MudText>
+                
+                @if (!string.IsNullOrEmpty(Item.Suggestion))
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true" NoIcon="true" Class="mt-2">
+                        <MudText Typo="Typo.caption">
+                            <strong>Suggestion:</strong> @Item.Suggestion
+                        </MudText>
+                    </MudAlert>
+                }
+                
+                @if (Item.Location != null && !string.IsNullOrEmpty(GetLocationText()))
+                {
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mt-1">
+                        <MudIcon Icon="@Icons.Material.Filled.LocationOn" Size="Size.Small" Color="Color.Secondary" />
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@GetLocationText()</MudText>
+                    </MudStack>
+                }
+                
+                @if (Item.Location?.Excerpt != null)
+                {
+                    <MudPaper Class="pa-2 mt-2" Outlined="true" Style="background-color: var(--mud-palette-background-gray);">
+                        <MudStack Row="true" AlignItems="AlignItems.Start" Justify="Justify.SpaceBetween">
+                            <MudText Typo="Typo.caption" Style="font-style: italic; flex: 1;">
+                                "@Item.Location.Excerpt"
+                            </MudText>
+                            <MudTooltip Text="Copy first 50 chars">
+                                <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" 
+                                               Size="Size.Small" 
+                                               Color="Color.Default"
+                                               OnClick="CopyExcerptToClipboard" />
+                            </MudTooltip>
+                        </MudStack>
+                    </MudPaper>
+                }
+            </MudStack>
+        </MudStack>
+    </MudCardContent>
+    
+    @if (ShowActions)
+    {
+        <MudCardActions>
+            <MudButton Size="Size.Small" 
+                       Color="Color.Primary" 
+                       StartIcon="@Icons.Material.Filled.CheckCircle"
+                       OnClick="() => OnMarkAddressed.InvokeAsync(Item)">
+                Mark Addressed
+            </MudButton>
+            <MudButton Size="Size.Small" 
+                       Color="Color.Default" 
+                       StartIcon="@Icons.Material.Filled.Comment"
+                       OnClick="() => OnAddComment.InvokeAsync(Item)">
+                Add Comment
+            </MudButton>
+        </MudCardActions>
+    }
+</MudCard>
+
+@code {
+    [Parameter, EditorRequired] 
+    public FeedbackItem Item { get; set; } = null!;
+    
+    [Parameter] 
+    public bool ShowActions { get; set; } = false;
+    
+    [Parameter] 
+    public EventCallback<FeedbackItem> OnMarkAddressed { get; set; }
+    
+    [Parameter] 
+    public EventCallback<FeedbackItem> OnAddComment { get; set; }
+    
+    private string GetSeverityIcon() => Item.Severity switch
+    {
+        FeedbackSeverity.Error => Icons.Material.Filled.Error,
+        FeedbackSeverity.Warning => Icons.Material.Filled.Warning,
+        FeedbackSeverity.Info => Icons.Material.Filled.Info,
+        _ => Icons.Material.Filled.Help
+    };
+    
+    private Color GetSeverityColor() => Item.Severity switch
+    {
+        FeedbackSeverity.Error => Color.Error,
+        FeedbackSeverity.Warning => Color.Warning,
+        FeedbackSeverity.Info => Color.Info,
+        _ => Color.Default
+    };
+    
+    private Color GetDimensionColor() => Item.EffectiveDimension switch
+    {
+        ReviewDimension.Language => Color.Primary,
+        ReviewDimension.Clarity => Color.Info,
+        ReviewDimension.Completeness => Color.Success,
+        ReviewDimension.FactualSupport => Color.Warning,
+        ReviewDimension.Compliance => Color.Secondary,
+        ReviewDimension.ToneAndStyle => Color.Tertiary,
+        ReviewDimension.Structure => Color.Dark,
+        _ => Color.Default
+    };
+    
+    private string GetBorderStyle() => Item.Severity switch
+    {
+        FeedbackSeverity.Error => "border-left: 4px solid var(--mud-palette-error);",
+        FeedbackSeverity.Warning => "border-left: 4px solid var(--mud-palette-warning);",
+        FeedbackSeverity.Info => "border-left: 4px solid var(--mud-palette-info);",
+        _ => ""
+    };
+    
+    private string GetLocationText()
+    {
+        var parts = new List<string>();
+        
+        if (Item.Location?.Page > 0)
+            parts.Add($"Page {Item.Location.Page}");
+        
+        if (!string.IsNullOrEmpty(Item.Location?.Section))
+            parts.Add($"Section {Item.Location.Section}");
+        
+        if (Item.Location?.LineNumber > 0)
+            parts.Add($"Line {Item.Location.LineNumber}");
+        
+        return string.Join(" • ", parts);
+    }
+    
+    private async Task CopyExcerptToClipboard()
+    {
+        if (Item.Location?.Excerpt != null)
+        {
+            var textToCopy = Item.Location.Excerpt.Length > 50 
+                ? Item.Location.Excerpt.Substring(0, 50) 
+                : Item.Location.Excerpt;
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", textToCopy);
+        }
+    }
+}

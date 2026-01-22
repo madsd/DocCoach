@@ -1,0 +1,86 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@using DocCoach.Web.State
+@inject AppState AppState
+
+<MudThemeProvider @bind-IsDarkMode="@_isDarkMode" Theme="@_theme" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="1">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@ToggleDrawer" />
+        <MudText Typo="Typo.h5" Class="ml-3">Doc Coach</MudText>
+        <MudSpacer />
+        @if (AppState.CurrentRole != Models.UserRole.None)
+        {
+            <MudChip T="string" Color="Color.Surface" Size="Size.Small" Class="mr-2">
+                @AppState.CurrentRole
+            </MudChip>
+        }
+        <MudTooltip Text="@(_isDarkMode ? "Switch to light mode" : "Switch to dark mode")">
+            <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)" 
+                           Color="Color.Inherit" 
+                           OnClick="@ToggleDarkMode" />
+        </MudTooltip>
+    </MudAppBar>
+    <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="2">
+        <MudDrawerHeader>
+            <MudText Typo="Typo.h6">Navigation</MudText>
+        </MudDrawerHeader>
+        <NavMenu />
+    </MudDrawer>
+    <MudMainContent Class="pt-16 px-4">
+        @Body
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    private bool _drawerOpen = true;
+    private bool _isDarkMode = false;
+    
+    private MudTheme _theme = new MudTheme
+    {
+        PaletteLight = new PaletteLight
+        {
+            Primary = "#1976d2",
+            Secondary = "#dc004e",
+            AppbarBackground = "#1976d2",
+        },
+        PaletteDark = new PaletteDark
+        {
+            Primary = "#90caf9",
+            Secondary = "#f48fb1",
+            AppbarBackground = "#1e1e1e",
+        }
+    };
+    
+    protected override void OnInitialized()
+    {
+        _isDarkMode = AppState.IsDarkMode;
+        AppState.OnChange += OnAppStateChanged;
+    }
+    
+    private void OnAppStateChanged()
+    {
+        _isDarkMode = AppState.IsDarkMode;
+        StateHasChanged();
+    }
+
+    private void ToggleDrawer()
+    {
+        _drawerOpen = !_drawerOpen;
+    }
+
+    private void ToggleDarkMode()
+    {
+        _isDarkMode = !_isDarkMode;
+        AppState.IsDarkMode = _isDarkMode;
+    }
+    
+    public void Dispose()
+    {
+        AppState.OnChange -= OnAppStateChanged;
+    }
+}

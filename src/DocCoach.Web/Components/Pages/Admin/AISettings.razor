@@ -1,0 +1,399 @@
+@page "/admin/ai-settings"
+@using DocCoach.Web.Models
+@using DocCoach.Web.Services.Interfaces
+@using DocCoach.Web.Services.Analyzers
+@using DocCoach.Web.State
+@inject IAIConfigurationService ConfigurationService
+@inject IEnumerable<IReviewAnalyzer> Analyzers
+@inject AppState AppState
+@inject ISnackbar Snackbar
+
+<PageTitle>AI Settings - Doc Coach</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
+        <MudStack>
+            <MudText Typo="Typo.h4">
+                <MudIcon Icon="@Icons.Material.Filled.Psychology" Class="mr-2" />
+                AI Configuration
+            </MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Configure AI model settings for document analysis
+            </MudText>
+        </MudStack>
+        
+        <MudStack Row="true" Spacing="2">
+            <MudButton Variant="Variant.Outlined" 
+                       Color="Color.Warning" 
+                       StartIcon="@Icons.Material.Filled.RestartAlt"
+                       OnClick="ResetToDefaults"
+                       Disabled="_isSaving">
+                Reset to Defaults
+            </MudButton>
+            <MudButton Variant="Variant.Filled" 
+                       Color="Color.Primary" 
+                       StartIcon="@Icons.Material.Filled.Save"
+                       OnClick="SaveConfiguration"
+                       Disabled="_isSaving">
+                @if (_isSaving)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    <text>Saving...</text>
+                }
+                else
+                {
+                    <text>Save Changes</text>
+                }
+            </MudButton>
+        </MudStack>
+    </MudStack>
+    
+    @if (_isLoading)
+    {
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudSkeleton SkeletonType="SkeletonType.Rectangle" Width="100%" Height="400px" />
+        </MudPaper>
+    }
+    else if (_configuration != null)
+    {
+        <MudGrid>
+            @* Model Settings *@
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Elevation="2">
+                    <MudStack>
+                        <MudText Typo="Typo.h6">
+                            <MudIcon Icon="@Icons.Material.Filled.Memory" Class="mr-2" Size="Size.Small" />
+                            Model Settings
+                        </MudText>
+                        <MudDivider Class="mb-2" />
+                        
+                        <MudTextField @bind-Value="_configuration.Name"
+                                      Label="Configuration Name"
+                                      Variant="Variant.Outlined"
+                                      HelperText="A friendly name for this configuration" />
+                        
+                        <MudTextField @bind-Value="_configuration.Description"
+                                      Label="Description"
+                                      Variant="Variant.Outlined"
+                                      Lines="2"
+                                      HelperText="Optional description" />
+                        
+                        <MudSelect @bind-Value="_configuration.Model"
+                                   Label="AI Model"
+                                   Variant="Variant.Outlined"
+                                   HelperText="Select the AI model to use for analysis">
+                            @foreach (var model in _configuration.AvailableModels)
+                            {
+                                <MudSelectItem Value="@model">@model</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+            
+            @* Analysis Parameters *@
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Elevation="2">
+                    <MudStack>
+                        <MudText Typo="Typo.h6">
+                            <MudIcon Icon="@Icons.Material.Filled.Tune" Class="mr-2" Size="Size.Small" />
+                            Analysis Parameters
+                        </MudText>
+                        <MudDivider Class="mb-2" />
+                        
+                        <MudStack>
+                            <MudText Typo="Typo.body2">Temperature: @_configuration.Temperature.ToString("F2")</MudText>
+                            <MudSlider @bind-Value="_configuration.Temperature"
+                                       Min="0.0f" Max="2.0f" Step="0.1f"
+                                       Color="Color.Primary">
+                                <MudStack Row="true" Justify="Justify.SpaceBetween">
+                                    <MudText Typo="Typo.caption">Focused (0)</MudText>
+                                    <MudText Typo="Typo.caption">Creative (2)</MudText>
+                                </MudStack>
+                            </MudSlider>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Lower values produce more consistent analysis. Higher values allow more variation.
+                            </MudText>
+                        </MudStack>
+                        
+                        <MudNumericField @bind-Value="_configuration.MaxTokens"
+                                         Label="Max Response Tokens"
+                                         Variant="Variant.Outlined"
+                                         Min="100" Max="8000"
+                                         HelperText="Maximum length of AI response (100-8000)" />
+                        
+                        <MudNumericField @bind-Value="_configuration.MaxDocumentLength"
+                                         Label="Max Document Length"
+                                         Variant="Variant.Outlined"
+                                         Min="1000" Max="128000"
+                                         HelperText="Maximum characters to analyze from document (1000-128000)" />
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+            
+            @* Summary Settings *@
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Elevation="2">
+                    <MudStack>
+                        <MudText Typo="Typo.h6">
+                            <MudIcon Icon="@Icons.Material.Filled.Summarize" Class="mr-2" Size="Size.Small" />
+                            Summary Generation
+                        </MudText>
+                        <MudDivider Class="mb-2" />
+                        
+                        <MudStack>
+                            <MudText Typo="Typo.body2">Summary Temperature: @_configuration.SummaryTemperature.ToString("F2")</MudText>
+                            <MudSlider @bind-Value="_configuration.SummaryTemperature"
+                                       Min="0.0f" Max="2.0f" Step="0.1f"
+                                       Color="Color.Secondary" />
+                        </MudStack>
+                        
+                        <MudNumericField @bind-Value="_configuration.SummaryMaxTokens"
+                                         Label="Summary Max Tokens"
+                                         Variant="Variant.Outlined"
+                                         Min="50" Max="1000"
+                                         HelperText="Maximum length of document summary" />
+                        
+                        <MudNumericField @bind-Value="_configuration.MaxSummaryDocumentLength"
+                                         Label="Summary Input Length"
+                                         Variant="Variant.Outlined"
+                                         Min="500" Max="16000"
+                                         HelperText="Characters used for summary generation" />
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+            
+            @* Available Models *@
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Elevation="2">
+                    <MudStack>
+                        <MudText Typo="Typo.h6">
+                            <MudIcon Icon="@Icons.Material.Filled.ModelTraining" Class="mr-2" Size="Size.Small" />
+                            Available Models
+                        </MudText>
+                        <MudDivider Class="mb-2" />
+                        
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">
+                            Configure which AI model deployments are available for selection:
+                        </MudText>
+                        
+                        <MudStack Spacing="2">
+                            @for (var i = 0; i < _configuration.AvailableModels.Count; i++)
+                            {
+                                var index = i;
+                                <MudStack Row="true" AlignItems="AlignItems.Center">
+                                    <MudTextField @bind-Value="_configuration.AvailableModels[index]"
+                                                  Variant="Variant.Outlined"
+                                                  Margin="Margin.Dense"
+                                                  Style="flex: 1;" />
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                                   Color="Color.Error"
+                                                   Size="Size.Small"
+                                                   OnClick="@(() => RemoveModel(index))"
+                                                   Disabled="@(_configuration.AvailableModels.Count <= 1)" />
+                                </MudStack>
+                            }
+                        </MudStack>
+                        
+                        <MudButton Variant="Variant.Text"
+                                   Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Add"
+                                   Size="Size.Small"
+                                   OnClick="AddModel"
+                                   Class="mt-2">
+                            Add Model
+                        </MudButton>
+                        
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+                            Enter the deployment names as configured in your Azure AI resource.
+                        </MudText>
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+            
+            @* System Prompt *@
+            <MudItem xs="12">
+                <MudPaper Class="pa-4" Elevation="2">
+                    <MudStack>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                            <MudText Typo="Typo.h6">
+                                <MudIcon Icon="@Icons.Material.Filled.Code" Class="mr-2" Size="Size.Small" />
+                                Analysis System Prompt
+                            </MudText>
+                            <MudButton Variant="Variant.Text" 
+                                       Size="Size.Small"
+                                       OnClick="ResetSystemPrompt">
+                                Reset to Default
+                            </MudButton>
+                        </MudStack>
+                        <MudDivider Class="mb-2" />
+                        
+                        <MudTextField @bind-Value="_configuration.SystemPrompt"
+                                      Variant="Variant.Outlined"
+                                      Lines="12"
+                                      HelperText="The system prompt that instructs the AI how to analyze documents. Use with caution - changes affect analysis quality." />
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+            
+            @* Summary System Prompt *@
+            <MudItem xs="12">
+                <MudPaper Class="pa-4" Elevation="2">
+                    <MudStack>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                            <MudText Typo="Typo.h6">
+                                <MudIcon Icon="@Icons.Material.Filled.ShortText" Class="mr-2" Size="Size.Small" />
+                                Summary System Prompt
+                            </MudText>
+                            <MudButton Variant="Variant.Text" 
+                                       Size="Size.Small"
+                                       OnClick="ResetSummaryPrompt">
+                                Reset to Default
+                            </MudButton>
+                        </MudStack>
+                        <MudDivider Class="mb-2" />
+                        
+                        <MudTextField @bind-Value="_configuration.SummarySystemPrompt"
+                                      Variant="Variant.Outlined"
+                                      Lines="4"
+                                      HelperText="The prompt used for generating document summaries." />
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+        
+        @* Footer info *@
+        <MudPaper Class="pa-3 mt-4" Elevation="0" Style="background-color: var(--mud-palette-background-grey);">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" Class="mr-1" />
+                    Configuration ID: @_configuration.Id
+                </MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    Last updated: @_configuration.UpdatedAt.ToString("g")
+                </MudText>
+            </MudStack>
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    private bool _isLoading = true;
+    private bool _isSaving = false;
+    private AIConfiguration? _configuration;
+    
+    protected override async Task OnInitializedAsync()
+    {
+        if (AppState.CurrentRole == UserRole.None)
+        {
+            AppState.CurrentRole = UserRole.Admin;
+        }
+        
+        await LoadConfiguration();
+    }
+    
+    private async Task LoadConfiguration()
+    {
+        _isLoading = true;
+        StateHasChanged();
+        
+        try
+        {
+            _configuration = await ConfigurationService.GetActiveConfigurationAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading configuration: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+    
+    private async Task SaveConfiguration()
+    {
+        if (_configuration == null) return;
+        
+        _isSaving = true;
+        StateHasChanged();
+        
+        try
+        {
+            await ConfigurationService.SaveAsync(_configuration);
+            
+            // Refresh the available models cache in AIContentAnalyzer
+            var aiAnalyzer = Analyzers.OfType<AIContentAnalyzer>().FirstOrDefault();
+            if (aiAnalyzer != null)
+            {
+                await aiAnalyzer.RefreshAvailableModelsAsync();
+            }
+            
+            Snackbar.Add("AI configuration saved successfully!", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error saving configuration: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+            StateHasChanged();
+        }
+    }
+    
+    private async Task ResetToDefaults()
+    {
+        try
+        {
+            _configuration = await ConfigurationService.ResetToDefaultAsync();
+            Snackbar.Add("Configuration reset to defaults.", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error resetting configuration: {ex.Message}", Severity.Error);
+        }
+    }
+    
+    private void ResetSystemPrompt()
+    {
+        if (_configuration != null)
+        {
+            _configuration.SystemPrompt = AIConfiguration.DefaultSystemPrompt;
+            Snackbar.Add("System prompt reset to default. Remember to save changes.", Severity.Info);
+        }
+    }
+    
+    private void ResetSummaryPrompt()
+    {
+        if (_configuration != null)
+        {
+            _configuration.SummarySystemPrompt = AIConfiguration.DefaultSummarySystemPrompt;
+            Snackbar.Add("Summary prompt reset to default. Remember to save changes.", Severity.Info);
+        }
+    }
+    
+    private void AddModel()
+    {
+        _configuration?.AvailableModels.Add("new-model");
+        StateHasChanged();
+    }
+    
+    private void RemoveModel(int index)
+    {
+        if (_configuration != null && _configuration.AvailableModels.Count > 1)
+        {
+            var removedModel = _configuration.AvailableModels[index];
+            _configuration.AvailableModels.RemoveAt(index);
+            
+            // If the current model was removed, switch to first available
+            if (_configuration.Model == removedModel)
+            {
+                _configuration.Model = _configuration.AvailableModels.First();
+            }
+            
+            StateHasChanged();
+        }
+    }
+}

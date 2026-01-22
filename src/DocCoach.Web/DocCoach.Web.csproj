@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\DocCoach.ServiceDefaults\DocCoach.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Azure.Data.Tables" Version="13.1.0" />
+    <PackageReference Include="Aspire.Azure.Storage.Blobs" Version="13.1.0" />
+    <PackageReference Include="Azure.AI.Inference" Version="1.0.0-beta.5" />
+    <PackageReference Include="Azure.AI.Projects" Version="1.0.0-beta.6" />
+    <PackageReference Include="Azure.Data.Tables" Version="12.11.0" />
+    <PackageReference Include="Azure.Identity" Version="1.17.0" />
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.26.0" />
+    <PackageReference Include="DocumentFormat.OpenXml" Version="3.3.0" />
+    <PackageReference Include="MudBlazor" Version="8.*" />
+    <PackageReference Include="PdfPig" Version="0.1.13" />
+    <PackageReference Include="System.ClientModel" Version="1.8.1" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <UserSecretsId>4abddbd1-7915-4766-9d05-edd66941d5db</UserSecretsId>
+  </PropertyGroup>
+
+</Project>

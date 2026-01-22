@@ -1,0 +1,664 @@
+@page "/auditor/review-detail/{ReviewId}"
+@using DocCoach.Web.Models
+@using DocCoach.Web.Services.Interfaces
+@using DocCoach.Web.State
+@using DocCoach.Web.Components.Shared
+@inject IReviewService ReviewService
+@inject IDocumentService DocumentService
+@inject IGuidelineService GuidelineService
+@inject AppState AppState
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Review Detail - Doc Coach</PageTitle>
+
+@if (_isLoading)
+{
+    <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+        <MudStack Spacing="4">
+            <MudSkeleton Width="300px" Height="40px" />
+            <MudGrid>
+                <MudItem xs="12" md="8">
+                    <MudSkeleton Width="100%" Height="calc(100vh - 250px)" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudSkeleton Width="100%" Height="calc(100vh - 250px)" />
+                </MudItem>
+            </MudGrid>
+        </MudStack>
+    </MudContainer>
+}
+else if (_review == null)
+{
+    <MudContainer MaxWidth="MaxWidth.Medium" Class="mt-8">
+        <MudAlert Severity="Severity.Error">
+            <MudText Typo="Typo.h6">Review Not Found</MudText>
+            <MudText>The requested review could not be found.</MudText>
+            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/auditor/history" Class="mt-2">
+                View Document History
+            </MudButton>
+        </MudAlert>
+    </MudContainer>
+}
+else
+{
+    <div class="review-detail-container">
+        @* Header *@
+        <div class="review-header">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Spacing="2">
+                <MudStack Spacing="1">
+                    <MudBreadcrumbs Items="_breadcrumbs" />
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                        <MudIcon Icon="@Icons.Material.Filled.FindInPage" Size="Size.Large" Color="Color.Primary" />
+                        <MudText Typo="Typo.h5">
+                            @(_document?.Name ?? "Document Review")
+                        </MudText>
+                        <ScoreBadge Score="@_review.OverallScore" Size="Size.Medium" />
+                    </MudStack>
+                </MudStack>
+                
+                <MudStack Row="true" Spacing="2">
+                    <MudButton Variant="Variant.Outlined" 
+                               Color="Color.Default" 
+                               StartIcon="@Icons.Material.Filled.Assessment"
+                               Href="@($"/auditor/review/{ReviewId}")">
+                        Summary View
+                    </MudButton>
+                </MudStack>
+            </MudStack>
+        </div>
+        
+        @* Quick Info Bar *@
+        <MudPaper Class="pa-2 info-bar" Elevation="1">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap">
+                <MudStack Row="true" Spacing="4">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <MudIcon Icon="@Icons.Material.Filled.Error" Color="Color.Error" Size="Size.Small" />
+                        <MudText Typo="Typo.body2">@GetSeverityCount(FeedbackSeverity.Error) Errors</MudText>
+                    </MudStack>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Warning" Size="Size.Small" />
+                        <MudText Typo="Typo.body2">@GetSeverityCount(FeedbackSeverity.Warning) Warnings</MudText>
+                    </MudStack>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <MudIcon Icon="@Icons.Material.Filled.Info" Color="Color.Info" Size="Size.Small" />
+                        <MudText Typo="Typo.body2">@GetSeverityCount(FeedbackSeverity.Info) Info</MudText>
+                    </MudStack>
+                </MudStack>
+                
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                    <MudIcon Icon="@Icons.Material.Filled.Rule" Size="Size.Small" Color="Color.Secondary" />
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        @(_guidelineSet?.Name ?? "Unknown Guideline Set")
+                    </MudText>
+                </MudStack>
+            </MudStack>
+        </MudPaper>
+        
+        @* Dimension Filter Bar *@
+        <MudPaper Class="pa-2 dimension-filter-bar" Elevation="0" Outlined="true">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    <MudIcon Icon="@Icons.Material.Filled.FilterList" Size="Size.Small" Class="mr-1" />
+                    Filter by:
+                </MudText>
+                
+                @foreach (var dimension in GetAvailableDimensions())
+                {
+                    var count = GetDimensionCount(dimension);
+                    <MudChip T="string" Size="Size.Small" 
+                             Color="@GetDimensionColor(dimension)"
+                             Variant="@(IsDimensionActive(dimension) ? Variant.Filled : Variant.Outlined)"
+                             OnClick="() => ToggleDimensionFilter(dimension)"
+                             Class="dimension-chip">
+                        <MudIcon Icon="@GetDimensionIcon(dimension)" Size="Size.Small" Class="mr-1" />
+                        @dimension.GetDisplayName() (@count)
+                    </MudChip>
+                }
+                
+                @if (_activeDimensions.Count < GetAvailableDimensions().Count() || _selectedRuleType != null)
+                {
+                    <MudButton Variant="Variant.Text" 
+                               Size="Size.Small" 
+                               Color="Color.Secondary"
+                               OnClick="ClearAllFilters"
+                               StartIcon="@Icons.Material.Filled.ClearAll">
+                        Clear Filters
+                    </MudButton>
+                }
+            </MudStack>
+        </MudPaper>
+        
+        @* Main Split View *@
+        <div class="main-split-view">
+            @* Document Viewer - Left Panel *@
+            <div class="document-panel">
+                <DocumentViewer DocumentText="@_document?.ExtractedText"
+                               DocumentId="@_document?.Id"
+                               ContentType="@_document?.ContentType"
+                               Height="100%" />
+            </div>
+            
+            @* Feedback Sidebar - Right Panel *@
+            <div class="feedback-panel">
+                <MudPaper Class="pa-1 feedback-sidebar" Elevation="2">
+                    @* Sidebar Header with filter chips inline *@
+                    <div class="feedback-header">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Style="flex-wrap: wrap; gap: 4px;">
+                            <MudText Typo="Typo.subtitle1">
+                                <MudIcon Icon="@Icons.Material.Filled.Feedback" Size="Size.Small" Class="mr-1" />
+                                Feedback (@_review.FeedbackItems.Count)
+                            </MudText>
+                            
+                            <MudStack Row="true" Spacing="0" AlignItems="AlignItems.Center">
+                                <MudChip T="string" Size="Size.Small" Color="Color.Error" 
+                                         OnClick="() => ToggleSeverityFilter(FeedbackSeverity.Error)"
+                                         Variant="@(IsSeverityActive(FeedbackSeverity.Error) ? Variant.Filled : Variant.Outlined)"
+                                         Class="ma-0">
+                                    @GetSeverityCount(FeedbackSeverity.Error)
+                                </MudChip>
+                                <MudChip T="string" Size="Size.Small" Color="Color.Warning"
+                                         OnClick="() => ToggleSeverityFilter(FeedbackSeverity.Warning)"
+                                         Variant="@(IsSeverityActive(FeedbackSeverity.Warning) ? Variant.Filled : Variant.Outlined)"
+                                         Class="ma-0">
+                                    @GetSeverityCount(FeedbackSeverity.Warning)
+                                </MudChip>
+                                <MudChip T="string" Size="Size.Small" Color="Color.Info"
+                                         OnClick="() => ToggleSeverityFilter(FeedbackSeverity.Info)"
+                                         Variant="@(IsSeverityActive(FeedbackSeverity.Info) ? Variant.Filled : Variant.Outlined)"
+                                         Class="ma-0">
+                                    @GetSeverityCount(FeedbackSeverity.Info)
+                                </MudChip>
+                                @if (_selectedFeedback != null)
+                                {
+                                    <MudIconButton Icon="@Icons.Material.Filled.Clear" 
+                                                   Size="Size.Small" 
+                                                   OnClick="ClearSelection"
+                                                   Class="ml-1" />
+                                }
+                            </MudStack>
+                        </MudStack>
+                    </div>
+                    
+                    @* Feedback Items List *@
+                    <div class="feedback-list">
+                        @foreach (var item in FilteredFeedbackItems)
+                        {
+                            var isExpanded = _selectedFeedback?.Id == item.Id;
+                            <MudCard Class="@GetFeedbackCardClass(item)" 
+                                     Outlined="true" 
+                                     Style="@GetFeedbackCardStyle(item)"
+                                     @onclick="() => SelectFeedback(item)">
+                                <MudCardContent Class="pa-1">
+                                    <MudStack Spacing="0">
+                                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                            <MudIcon Icon="@(isExpanded ? Icons.Material.Filled.ExpandMore : Icons.Material.Filled.ChevronRight)" 
+                                                     Size="Size.Small" 
+                                                     Color="Color.Default" />
+                                            <MudIcon Icon="@GetSeverityIcon(item.Severity)" 
+                                                     Color="@GetSeverityColor(item.Severity)" 
+                                                     Size="Size.Small" />
+                                            <MudText Typo="Typo.body2" Class="text-truncate" Style="flex: 1; font-weight: 500;">
+                                                @item.Title
+                                            </MudText>
+                                            <MudTooltip Text="@($"Filter by {item.RuleType.GetDisplayName()}")" Style="z-index: 2000;">
+                                                <MudChip T="string" Size="Size.Small" 
+                                                         Color="@GetDimensionColor(item.EffectiveDimension)" 
+                                                         Variant="Variant.Text"
+                                                         Class="ma-0 pa-0"
+                                                         OnClick="@(() => FilterByRuleType(item.RuleType))">
+                                                    @item.RuleType.GetDisplayName()
+                                                </MudChip>
+                                            </MudTooltip>
+                                        </MudStack>
+                                        
+                                        @if (isExpanded)
+                                        {
+                                            @* Expanded inline details *@
+                                            <div class="feedback-expanded-details mt-2">
+                                                <MudStack Spacing="1">
+                                                    <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                                        <MudChip T="string" Size="Size.Small" 
+                                                                 Color="@GetDimensionColor(item.EffectiveDimension)"
+                                                                 Variant="Variant.Outlined"
+                                                                 Class="ma-0">
+                                                            @item.EffectiveDimension.GetDisplayName()
+                                                        </MudChip>
+                                                        @if (item.Confidence.HasValue)
+                                                        {
+                                                            <MudTooltip Text="Confidence score">
+                                                                <MudChip T="string" Size="Size.Small" 
+                                                                         Color="Color.Default"
+                                                                         Variant="Variant.Text"
+                                                                         Class="ma-0">
+                                                                    @($"{item.Confidence:P0}")
+                                                                </MudChip>
+                                                            </MudTooltip>
+                                                        }
+                                                    </MudStack>
+                                                    
+                                                    <MudText Typo="Typo.caption">@item.Description</MudText>
+                                                    
+                                                    @if (!string.IsNullOrEmpty(item.Suggestion))
+                                                    {
+                                                        <MudAlert Severity="Severity.Info" Dense="true" Class="mt-1">
+                                                            <MudText Typo="Typo.caption">
+                                                                <strong>Suggestion:</strong> @item.Suggestion
+                                                            </MudText>
+                                                        </MudAlert>
+                                                    }
+                                                    
+                                                    @if (!string.IsNullOrEmpty(item.Location?.Excerpt))
+                                                    {
+                                                        <MudStack Row="true" AlignItems="AlignItems.Start" Spacing="1">
+                                                            <MudText Typo="Typo.caption" Style="font-style: italic; color: var(--mud-palette-text-secondary); flex: 1;">
+                                                                "@item.Location.Excerpt"
+                                                            </MudText>
+                                                            <MudTooltip Text="Copy first 50 chars">
+                                                                <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" 
+                                                                               Size="Size.Small" 
+                                                                               Color="Color.Default"
+                                                                               OnClick="@(() => CopyExcerptToClipboard(item.Location.Excerpt))" />
+                                                            </MudTooltip>
+                                                        </MudStack>
+                                                    }
+                                                </MudStack>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            @* Collapsed summary *@
+                                            <MudText Typo="Typo.caption" Class="text-truncate-2" Color="Color.Secondary">
+                                                @item.Description
+                                            </MudText>
+                                        }
+                                    </MudStack>
+                                </MudCardContent>
+                            </MudCard>
+                        }
+                        
+                        @if (!FilteredFeedbackItems.Any())
+                        {
+                            <MudAlert Severity="Severity.Info" Dense="true">
+                                No feedback items match the current filter.
+                            </MudAlert>
+                        }
+                    </div>
+                </MudPaper>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .review-detail-container {
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 64px);
+        padding: 8px 12px;
+        box-sizing: border-box;
+        overflow: hidden;
+    }
+    
+    .review-header {
+        flex-shrink: 0;
+        margin-bottom: 4px;
+    }
+    
+    .info-bar {
+        flex-shrink: 0;
+        margin-bottom: 4px;
+    }
+    
+    .dimension-filter-bar {
+        flex-shrink: 0;
+        margin-bottom: 4px;
+        background-color: var(--mud-palette-background-gray);
+    }
+    
+    .dimension-chip {
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+    
+    .dimension-chip:hover {
+        transform: scale(1.02);
+    }
+    
+    .main-split-view {
+        display: flex;
+        flex: 1;
+        gap: 8px;
+        min-height: 0;
+        overflow: hidden;
+    }
+    
+    .document-panel {
+        flex: 2;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+    }
+    
+    .feedback-panel {
+        flex: 1;
+        min-width: 280px;
+        max-width: 350px;
+        min-height: 0;
+        overflow: hidden;
+    }
+    
+    .feedback-sidebar {
+        height: 100%;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .feedback-header {
+        flex-shrink: 0;
+        padding-bottom: 4px;
+        border-bottom: 1px solid var(--mud-palette-divider);
+    }
+    
+    .feedback-sidebar .feedback-list {
+        overflow-y: auto;
+        flex: 1;
+        min-height: 0;
+        padding-top: 4px;
+    }
+    
+    .feedback-sidebar .feedback-list .mud-card {
+        cursor: pointer;
+        transition: all 0.15s ease;
+        margin-bottom: 4px;
+    }
+    
+    .feedback-sidebar .feedback-list .mud-card:hover {
+        transform: translateX(2px);
+        box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+    }
+    
+    .feedback-expanded-details {
+        padding: 4px 8px;
+        margin-left: 20px;
+        border-left: 2px solid var(--mud-palette-primary);
+        background-color: var(--mud-palette-background-gray);
+        border-radius: 0 4px 4px 0;
+    }
+    
+    .feedback-card-selected {
+        border-width: 2px !important;
+    }
+    
+    .text-truncate-2 {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    
+    /* Responsive adjustments */
+    @@media (max-width: 960px) {
+        .main-split-view {
+            flex-direction: column;
+        }
+        
+        .document-panel {
+            flex: 1;
+            min-height: 300px;
+        }
+        
+        .feedback-panel {
+            flex: 1;
+            max-width: none;
+            min-height: 300px;
+        }
+        
+        .dimension-filter-bar {
+            overflow-x: auto;
+        }
+    }
+</style>
+
+@code {
+    [Parameter] public string ReviewId { get; set; } = "";
+    
+    private bool _isLoading = true;
+    private Review? _review;
+    private Document? _document;
+    private GuidelineSet? _guidelineSet;
+    private FeedbackItem? _selectedFeedback;
+    
+    // Filter state
+    private HashSet<FeedbackSeverity> _activeSeverities = [FeedbackSeverity.Error, FeedbackSeverity.Warning, FeedbackSeverity.Info];
+    private HashSet<ReviewDimension> _activeDimensions = new();
+    private RuleType? _selectedRuleType;
+    
+    private List<BreadcrumbItem> _breadcrumbs = [];
+    
+    private IEnumerable<FeedbackItem> FilteredFeedbackItems => _review?.FeedbackItems
+        .Where(i => _activeSeverities.Contains(i.Severity))
+        .Where(i => _activeDimensions.Count == 0 || _activeDimensions.Contains(i.EffectiveDimension))
+        .Where(i => _selectedRuleType == null || i.RuleType == _selectedRuleType)
+        .OrderByDescending(i => i.Severity)
+        .ThenBy(i => i.EffectiveDimension)
+        .ThenBy(i => i.RuleType) ?? Enumerable.Empty<FeedbackItem>();
+    
+    protected override async Task OnInitializedAsync()
+    {
+        if (AppState.CurrentRole == UserRole.None)
+        {
+            AppState.CurrentRole = UserRole.Auditor;
+        }
+        
+        await LoadReviewData();
+    }
+    
+    private async Task LoadReviewData()
+    {
+        _isLoading = true;
+        StateHasChanged();
+        
+        try
+        {
+            _review = await ReviewService.GetByIdAsync(ReviewId);
+            
+            if (_review != null)
+            {
+                _document = await DocumentService.GetByIdAsync(_review.DocumentId);
+                _guidelineSet = await GuidelineService.GetByIdAsync(_review.GuidelineSetId);
+                
+                // Initialize dimension filters based on available feedback
+                _activeDimensions = GetAvailableDimensions().ToHashSet();
+                
+                _breadcrumbs = new List<BreadcrumbItem>
+                {
+                    new BreadcrumbItem("Home", href: "/"),
+                    new BreadcrumbItem("Documents", href: "/auditor/history"),
+                    new BreadcrumbItem(_document?.Name ?? "Review", href: $"/auditor/review/{ReviewId}"),
+                    new BreadcrumbItem("Detail View", href: null, disabled: true)
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading review: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+    
+    private void SelectFeedback(FeedbackItem item)
+    {
+        _selectedFeedback = _selectedFeedback?.Id == item.Id ? null : item;
+        StateHasChanged();
+    }
+    
+    private void ClearSelection()
+    {
+        _selectedFeedback = null;
+        StateHasChanged();
+    }
+    
+    private void ToggleSeverityFilter(FeedbackSeverity severity)
+    {
+        if (_activeSeverities.Contains(severity))
+        {
+            if (_activeSeverities.Count > 1)
+            {
+                _activeSeverities.Remove(severity);
+            }
+        }
+        else
+        {
+            _activeSeverities.Add(severity);
+        }
+        
+        ClearSelectionIfNotVisible();
+    }
+    
+    private void ToggleDimensionFilter(ReviewDimension dimension)
+    {
+        if (_activeDimensions.Contains(dimension))
+        {
+            if (_activeDimensions.Count > 1)
+            {
+                _activeDimensions.Remove(dimension);
+            }
+        }
+        else
+        {
+            _activeDimensions.Add(dimension);
+        }
+        
+        ClearSelectionIfNotVisible();
+    }
+    
+    private void FilterByRuleType(RuleType ruleType)
+    {
+        if (_selectedRuleType == ruleType)
+        {
+            _selectedRuleType = null;
+        }
+        else
+        {
+            _selectedRuleType = ruleType;
+            // Also ensure the dimension is active
+            var dimension = ruleType.GetDimension();
+            if (!_activeDimensions.Contains(dimension))
+            {
+                _activeDimensions.Add(dimension);
+            }
+        }
+        
+        ClearSelectionIfNotVisible();
+        StateHasChanged();
+    }
+    
+    private void ClearAllFilters()
+    {
+        _activeSeverities = [FeedbackSeverity.Error, FeedbackSeverity.Warning, FeedbackSeverity.Info];
+        _activeDimensions = GetAvailableDimensions().ToHashSet();
+        _selectedRuleType = null;
+        _selectedFeedback = null;
+        StateHasChanged();
+    }
+    
+    private void ClearSelectionIfNotVisible()
+    {
+        if (_selectedFeedback != null && !FilteredFeedbackItems.Any(f => f.Id == _selectedFeedback.Id))
+        {
+            _selectedFeedback = null;
+        }
+    }
+    
+    private IEnumerable<ReviewDimension> GetAvailableDimensions()
+    {
+        return _review?.FeedbackItems
+            .Select(f => f.EffectiveDimension)
+            .Distinct()
+            .OrderBy(d => d) ?? Enumerable.Empty<ReviewDimension>();
+    }
+    
+    private bool IsSeverityActive(FeedbackSeverity severity) => _activeSeverities.Contains(severity);
+    
+    private bool IsDimensionActive(ReviewDimension dimension) => _activeDimensions.Contains(dimension);
+    
+    private int GetSeverityCount(FeedbackSeverity severity) 
+        => _review?.FeedbackItems.Count(f => f.Severity == severity) ?? 0;
+    
+    private int GetDimensionCount(ReviewDimension dimension)
+        => _review?.FeedbackItems.Count(f => f.EffectiveDimension == dimension) ?? 0;
+    
+    private string GetFeedbackCardClass(FeedbackItem item) 
+        => _selectedFeedback?.Id == item.Id ? "feedback-card-selected" : "";
+    
+    private string GetFeedbackCardStyle(FeedbackItem item)
+    {
+        var borderColor = item.Severity switch
+        {
+            FeedbackSeverity.Error => "var(--mud-palette-error)",
+            FeedbackSeverity.Warning => "var(--mud-palette-warning)",
+            FeedbackSeverity.Info => "var(--mud-palette-info)",
+            _ => "var(--mud-palette-lines-default)"
+        };
+        
+        var borderWidth = _selectedFeedback?.Id == item.Id ? "2px" : "1px";
+        var bgColor = _selectedFeedback?.Id == item.Id ? "var(--mud-palette-background-gray)" : "";
+        
+        return $"border-left: 3px solid {borderColor}; border-width: {borderWidth}; background-color: {bgColor};";
+    }
+    
+    private string GetSeverityIcon(FeedbackSeverity severity) => severity switch
+    {
+        FeedbackSeverity.Error => Icons.Material.Filled.Error,
+        FeedbackSeverity.Warning => Icons.Material.Filled.Warning,
+        FeedbackSeverity.Info => Icons.Material.Filled.Info,
+        _ => Icons.Material.Filled.Help
+    };
+    
+    private Color GetSeverityColor(FeedbackSeverity severity) => severity switch
+    {
+        FeedbackSeverity.Error => Color.Error,
+        FeedbackSeverity.Warning => Color.Warning,
+        FeedbackSeverity.Info => Color.Info,
+        _ => Color.Default
+    };
+    
+    private Color GetDimensionColor(ReviewDimension dimension) => dimension switch
+    {
+        ReviewDimension.Language => Color.Primary,
+        ReviewDimension.Clarity => Color.Info,
+        ReviewDimension.Completeness => Color.Secondary,
+        ReviewDimension.FactualSupport => Color.Success,
+        ReviewDimension.Compliance => Color.Warning,
+        ReviewDimension.ToneAndStyle => Color.Tertiary,
+        ReviewDimension.Structure => Color.Dark,
+        _ => Color.Default
+    };
+    
+    private string GetDimensionIcon(ReviewDimension dimension) => dimension switch
+    {
+        ReviewDimension.Language => Icons.Material.Filled.Spellcheck,
+        ReviewDimension.Clarity => Icons.Material.Filled.Visibility,
+        ReviewDimension.Completeness => Icons.Material.Filled.Checklist,
+        ReviewDimension.FactualSupport => Icons.Material.Filled.FactCheck,
+        ReviewDimension.Compliance => Icons.Material.Filled.Rule,
+        ReviewDimension.ToneAndStyle => Icons.Material.Filled.RecordVoiceOver,
+        ReviewDimension.Structure => Icons.Material.Filled.AccountTree,
+        _ => Icons.Material.Filled.Help
+    };
+    
+    private async Task CopyExcerptToClipboard(string excerpt)
+    {
+        var textToCopy = excerpt.Length > 50 ? excerpt.Substring(0, 50) : excerpt;
+        await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", textToCopy);
+        Snackbar.Add("Copied to clipboard", Severity.Success);
+    }
+}

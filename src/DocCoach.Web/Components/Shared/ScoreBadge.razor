@@ -1,0 +1,34 @@
+@* A compact score badge for inline display *@
+
+<MudChip T="string" 
+         Size="@Size" 
+         Color="@GetScoreColor()" 
+         Variant="Variant.Filled"
+         Class="@Class"
+         Style="@($"font-weight: bold; {Style}")">
+    @Score
+</MudChip>
+
+@code {
+    /// <summary>Score value (0-100).</summary>
+    [Parameter] public int Score { get; set; }
+    
+    /// <summary>Size of the badge.</summary>
+    [Parameter] public Size Size { get; set; } = Size.Small;
+    
+    /// <summary>Additional CSS classes.</summary>
+    [Parameter] public string? Class { get; set; }
+    
+    /// <summary>Additional inline styles.</summary>
+    [Parameter] public string? Style { get; set; }
+    
+    private Color GetScoreColor()
+    {
+        return Score switch
+        {
+            >= 80 => Color.Success,
+            >= 60 => Color.Warning,
+            _ => Color.Error
+        };
+    }
+}

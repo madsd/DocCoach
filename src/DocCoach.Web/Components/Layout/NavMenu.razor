@@ -1,0 +1,95 @@
+@implements IDisposable
+@using DocCoach.Web.Models
+@using DocCoach.Web.State
+@inject AppState AppState
+@inject NavigationManager Navigation
+
+<MudNavMenu>
+    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Home">
+        Home
+    </MudNavLink>
+    
+    @if (AppState.CurrentRole == UserRole.Auditor)
+    {
+        <MudNavGroup Title="Auditor" Icon="@Icons.Material.Filled.RateReview" @bind-Expanded="_auditorExpanded">
+            <MudNavLink Href="/auditor/upload" Icon="@Icons.Material.Filled.CloudUpload">
+                Upload Document
+            </MudNavLink>
+            <MudNavLink Href="/auditor/history" Icon="@Icons.Material.Filled.History">
+                Document History
+            </MudNavLink>
+        </MudNavGroup>
+    }
+    
+    @if (AppState.CurrentRole == UserRole.Admin)
+    {
+        <MudNavGroup Title="Admin" Icon="@Icons.Material.Filled.AdminPanelSettings" @bind-Expanded="_adminExpanded">
+            <MudNavLink Href="/admin/guidelines" Icon="@Icons.Material.Filled.Rule">
+                Guidelines
+            </MudNavLink>
+            <MudNavLink Href="/admin/ai-settings" Icon="@Icons.Material.Filled.Psychology">
+                AI Settings
+            </MudNavLink>
+        </MudNavGroup>
+    }
+    
+    <MudDivider Class="my-2" />
+    
+    <MudNavLink OnClick="@ToggleTheme" Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)">
+        @(_isDarkMode ? "Light Mode" : "Dark Mode")
+    </MudNavLink>
+    
+    @if (AppState.CurrentRole != UserRole.None)
+    {
+        <MudNavLink OnClick="@SwitchRole" Icon="@Icons.Material.Filled.SwitchAccount">
+            Switch Role
+        </MudNavLink>
+    }
+</MudNavMenu>
+
+@code {
+    private bool _isDarkMode = false;
+    private bool _auditorExpanded = false;
+    private bool _adminExpanded = false;
+    
+    protected override void OnInitialized()
+    {
+        _isDarkMode = AppState.IsDarkMode;
+        _auditorExpanded = AppState.CurrentRole == UserRole.Auditor;
+        _adminExpanded = AppState.CurrentRole == UserRole.Admin;
+        AppState.OnChange += OnAppStateChanged;
+    }
+    
+    private void OnAppStateChanged()
+    {
+        _isDarkMode = AppState.IsDarkMode;
+        // Expand the menu for the selected role
+        if (AppState.CurrentRole == UserRole.Auditor)
+        {
+            _auditorExpanded = true;
+        }
+        else if (AppState.CurrentRole == UserRole.Admin)
+        {
+            _adminExpanded = true;
+        }
+        StateHasChanged();
+    }
+    
+    private void ToggleTheme()
+    {
+        _isDarkMode = !_isDarkMode;
+        AppState.IsDarkMode = _isDarkMode;
+    }
+    
+    private void SwitchRole()
+    {
+        AppState.CurrentRole = UserRole.None;
+        Navigation.NavigateTo("/");
+    }
+    
+    public void Dispose()
+    {
+        AppState.OnChange -= OnAppStateChanged;
+    }
+}
+

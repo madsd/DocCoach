@@ -1,0 +1,96 @@
+@using DocCoach.Web.Models
+
+<MudCard Class="guideline-card" Elevation="2">
+    <MudCardHeader>
+        <CardHeaderAvatar>
+            <MudAvatar Color="@(GuidelineSet.IsDefault ? Color.Primary : Color.Default)">
+                <MudIcon Icon="@Icons.Material.Filled.Rule" />
+            </MudAvatar>
+        </CardHeaderAvatar>
+        <CardHeaderContent>
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                <MudText Typo="Typo.h6">@GuidelineSet.Name</MudText>
+                @if (GuidelineSet.IsDefault)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Filled">Default</MudChip>
+                }
+            </MudStack>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                @GuidelineSet.Rules.Count rules • @GuidelineSet.EnabledRules.Count() enabled
+            </MudText>
+        </CardHeaderContent>
+        <CardHeaderActions>
+            <MudMenu Icon="@Icons.Material.Filled.MoreVert" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                <MudMenuItem Icon="@Icons.Material.Filled.Visibility" OnClick="@OnView">View Details</MudMenuItem>
+                <MudMenuItem Icon="@Icons.Material.Filled.Edit" OnClick="@OnEdit">Edit</MudMenuItem>
+                @if (!GuidelineSet.IsDefault)
+                {
+                    <MudMenuItem Icon="@Icons.Material.Filled.Star" OnClick="@OnSetDefault">Set as Default</MudMenuItem>
+                }
+                <MudDivider />
+                <MudMenuItem Icon="@Icons.Material.Filled.Delete" IconColor="Color.Error" OnClick="@OnDelete">Delete</MudMenuItem>
+            </MudMenu>
+        </CardHeaderActions>
+    </MudCardHeader>
+    
+    <MudCardContent>
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3" Style="min-height: 40px;">
+            @(string.IsNullOrEmpty(GuidelineSet.Description) ? "No description provided." : GuidelineSet.Description)
+        </MudText>
+        
+        <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap">
+            @foreach (var dimension in GetDimensionSummary())
+            {
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@GetDimensionColor(dimension.Key)">
+                    @dimension.Key.GetDisplayName(): @dimension.Value
+                </MudChip>
+            }
+        </MudStack>
+    </MudCardContent>
+    
+    <MudCardActions>
+        <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="@OnView" StartIcon="@Icons.Material.Filled.Visibility">
+            View Details
+        </MudButton>
+        <MudSpacer />
+        <MudText Typo="Typo.caption" Color="Color.Secondary">
+            Updated @GuidelineSet.UpdatedAt.ToString("MMM dd, yyyy")
+        </MudText>
+    </MudCardActions>
+</MudCard>
+
+@code {
+    [Parameter, EditorRequired]
+    public GuidelineSet GuidelineSet { get; set; } = null!;
+    
+    [Parameter]
+    public EventCallback OnView { get; set; }
+    
+    [Parameter]
+    public EventCallback OnEdit { get; set; }
+    
+    [Parameter]
+    public EventCallback OnDelete { get; set; }
+    
+    [Parameter]
+    public EventCallback OnSetDefault { get; set; }
+    
+    private Dictionary<ReviewDimension, int> GetDimensionSummary()
+    {
+        return GuidelineSet.EnabledRules
+            .GroupBy(r => r.EffectiveDimension)
+            .ToDictionary(g => g.Key, g => g.Count());
+    }
+    
+    private Color GetDimensionColor(ReviewDimension dimension) => dimension switch
+    {
+        ReviewDimension.Language => Color.Primary,
+        ReviewDimension.Clarity => Color.Info,
+        ReviewDimension.Completeness => Color.Success,
+        ReviewDimension.FactualSupport => Color.Warning,
+        ReviewDimension.Compliance => Color.Secondary,
+        ReviewDimension.ToneAndStyle => Color.Tertiary,
+        ReviewDimension.Structure => Color.Dark,
+        _ => Color.Default
+    };
+}

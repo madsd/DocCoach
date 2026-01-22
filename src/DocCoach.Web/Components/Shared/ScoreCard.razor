@@ -1,0 +1,120 @@
+@using DocCoach.Web.Models
+
+<MudPaper Class="pa-4" Elevation="2">
+    <MudStack>
+        <MudText Typo="Typo.subtitle2" Color="Color.Secondary">@Title</MudText>
+        
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+            <MudText Typo="Typo.h3" Style="@($"color: {GetColorHex()}; font-weight: 600;")">@Score</MudText>
+            
+            <MudStack Spacing="0">
+                <MudText Typo="Typo.h6" Color="@GetScoreColor()">@GetScoreLabel()</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    @GetScoreDescription()
+                </MudText>
+            </MudStack>
+        </MudStack>
+        
+        @if (ShowCategories && DimensionScores != null && DimensionScores.Count > 0)
+        {
+            <MudDivider Class="my-2" />
+            <MudText Typo="Typo.subtitle2" Color="Color.Secondary" Class="mb-2">Dimension Breakdown</MudText>
+            
+            @foreach (var dimension in DimensionScores)
+            {
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-1">
+                    <MudIcon Icon="@GetDimensionIcon(dimension.Key)" Size="Size.Small" Color="@GetCategoryColor(dimension.Value)" />
+                    <MudText Typo="Typo.body2" Style="min-width: 140px;">@dimension.Key.GetDisplayName()</MudText>
+                    <MudProgressLinear Color="@GetCategoryColor(dimension.Value)" 
+                                        Value="@dimension.Value" 
+                                        Size="Size.Small" 
+                                        Rounded="true"
+                                        Style="flex-grow: 1;" />
+                    <MudText Typo="Typo.body2" Color="@GetCategoryColor(dimension.Value)" Style="min-width: 36px; text-align: right;">
+                        @dimension.Value
+                    </MudText>
+                </MudStack>
+            }
+        }
+    </MudStack>
+</MudPaper>
+
+@code {
+    [Parameter] public string Title { get; set; } = "Overall Score";
+    [Parameter] public string? Subtitle { get; set; }
+    [Parameter] public int Score { get; set; }
+    [Parameter] public Dictionary<ReviewDimension, int>? DimensionScores { get; set; }
+    [Parameter] public bool ShowCategories { get; set; } = true;
+    [Parameter] public EventCallback<ReviewDimension> OnDimensionClick { get; set; }
+    
+    private Color GetScoreColor()
+    {
+        return Score switch
+        {
+            >= 80 => Color.Success,
+            >= 60 => Color.Warning,
+            _ => Color.Error
+        };
+    }
+    
+    private string GetColorHex()
+    {
+        return Score switch
+        {
+            >= 80 => "#4caf50",
+            >= 60 => "#ff9800",
+            _ => "#f44336"
+        };
+    }
+    
+    private string GetScoreLabel()
+    {
+        return Score switch
+        {
+            >= 90 => "Excellent",
+            >= 80 => "Good",
+            >= 70 => "Satisfactory",
+            >= 60 => "Needs Improvement",
+            >= 50 => "Below Standard",
+            _ => "Critical Issues"
+        };
+    }
+    
+    private string GetScoreDescription()
+    {
+        return Score switch
+        {
+            >= 90 => "Document meets all quality standards",
+            >= 80 => "Document is well-structured with minor improvements needed",
+            >= 70 => "Document is acceptable but has areas for improvement",
+            >= 60 => "Document requires revisions to meet standards",
+            >= 50 => "Document has significant issues that must be addressed",
+            _ => "Document requires major revisions before approval"
+        };
+    }
+    
+    private Color GetCategoryColor(int score)
+    {
+        return score switch
+        {
+            >= 80 => Color.Success,
+            >= 60 => Color.Warning,
+            _ => Color.Error
+        };
+    }
+    
+    private string GetDimensionIcon(ReviewDimension dimension)
+    {
+        return dimension switch
+        {
+            ReviewDimension.Language => Icons.Material.Filled.Spellcheck,
+            ReviewDimension.Clarity => Icons.Material.Filled.Visibility,
+            ReviewDimension.Completeness => Icons.Material.Filled.Checklist,
+            ReviewDimension.FactualSupport => Icons.Material.Filled.FactCheck,
+            ReviewDimension.Compliance => Icons.Material.Filled.Rule,
+            ReviewDimension.ToneAndStyle => Icons.Material.Filled.RecordVoiceOver,
+            ReviewDimension.Structure => Icons.Material.Filled.AccountTree,
+            _ => Icons.Material.Filled.Category
+        };
+    }
+}

@@ -1,0 +1,400 @@
+@page "/admin/guidelines/{Id}"
+@using DocCoach.Web.Models
+@using DocCoach.Web.Models.ViewModels
+@using DocCoach.Web.Services.Interfaces
+@using DocCoach.Web.Components.Shared
+@using DocCoach.Web.Components.Dialogs
+@inject IGuidelineService GuidelineService
+@inject IStorageService StorageService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Guideline Details - Doc Coach</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
+    @if (_isLoading)
+    {
+        <MudStack AlignItems="AlignItems.Center" Class="pa-8">
+            <MudProgressCircular Size="Size.Large" Indeterminate="true" />
+            <MudText>Loading guideline set...</MudText>
+        </MudStack>
+    }
+    else if (_guidelineSet == null)
+    {
+        <MudAlert Severity="Severity.Error">
+            Guideline set not found.
+            <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="@(() => NavigationManager.NavigateTo("/admin/guidelines"))">
+                Return to Guidelines
+            </MudButton>
+        </MudAlert>
+    }
+    else
+    {
+        <!-- Header -->
+        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+            <MudStack Spacing="1">
+                <MudBreadcrumbs Items="_breadcrumbs" />
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudText Typo="Typo.h4">@_guidelineSet.Name</MudText>
+                    @if (_guidelineSet.IsDefault)
+                    {
+                        <MudChip T="string" Color="Color.Primary" Size="Size.Small">Default</MudChip>
+                    }
+                    @if (!_guidelineSet.IsActive)
+                    {
+                        <MudChip T="string" Color="Color.Warning" Size="Size.Small">Inactive</MudChip>
+                    }
+                </MudStack>
+                @if (!string.IsNullOrEmpty(_guidelineSet.Description))
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">@_guidelineSet.Description</MudText>
+                }
+            </MudStack>
+            
+            <MudStack Row="true" Spacing="2">
+                <MudButton Variant="Variant.Outlined" 
+                           StartIcon="@Icons.Material.Filled.Edit"
+                           OnClick="OpenEditDialog">
+                    Edit Details
+                </MudButton>
+                <MudButton Variant="Variant.Filled" 
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="OpenCreateRuleDialog">
+                    Add Rule
+                </MudButton>
+            </MudStack>
+        </MudStack>
+        
+        <!-- Rules List -->
+        <MudPaper Elevation="1" Class="pa-4">
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+                <MudText Typo="Typo.h6">
+                    Rules (@_rules.Count)
+                </MudText>
+                
+                <MudStack Row="true" Spacing="2">
+                    <MudSelect T="ReviewDimension?" 
+                               @bind-Value="_filterDimension"
+                               Label="Filter by Dimension"
+                               Variant="Variant.Outlined"
+                               Clearable="true"
+                               Dense="true"
+                               Style="min-width: 200px;">
+                        @foreach (var dimension in Enum.GetValues<ReviewDimension>())
+                        {
+                            <MudSelectItem Value="@((ReviewDimension?)dimension)">@dimension.GetDisplayName()</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudStack>
+            </MudStack>
+            
+            @if (!FilteredRules.Any())
+            {
+                <MudAlert Severity="Severity.Info" Class="my-4">
+                    @if (_rules.Count == 0)
+                    {
+                        <span>No rules have been added yet. Click "Add Rule" to create your first rule.</span>
+                    }
+                    else
+                    {
+                        <span>No rules match the selected filter.</span>
+                    }
+                </MudAlert>
+            }
+            else
+            {
+                <RulesList Rules="@FilteredRules"
+                              OnEdit="OpenEditRuleDialog"
+                              OnDelete="DeleteRule"
+                              OnReorder="ReorderRules" />
+            }
+        </MudPaper>
+        
+        <!-- Dimension Summary -->
+        <MudPaper Elevation="1" Class="pa-4 mt-4">
+            <MudText Typo="Typo.h6" Class="mb-4">Dimension Summary</MudText>
+            
+            <MudGrid>
+                @foreach (var dimension in Enum.GetValues<ReviewDimension>())
+                {
+                    var count = _rules.Count(r => r.EffectiveDimension == dimension);
+                    var enabledCount = _rules.Count(r => r.EffectiveDimension == dimension && r.IsEnabled);
+                    
+                    <MudItem xs="12" sm="6" md="3">
+                        <MudPaper Elevation="0" Class="pa-3" Style="@($"border-left: 4px solid {GetDimensionColor(dimension)}; background: var(--mud-palette-background-grey);")">
+                            <MudText Typo="Typo.subtitle2" Color="Color.Secondary">@dimension.GetDisplayName()</MudText>
+                            <MudText Typo="Typo.h5">@enabledCount / @count</MudText>
+                            <MudText Typo="Typo.caption">enabled rules</MudText>
+                        </MudPaper>
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudPaper>
+        
+        <!-- Example Documents Section -->
+        <MudPaper Elevation="1" Class="pa-4 mt-4">
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Filled.LibraryBooks" Color="Color.Primary" />
+                    <MudText Typo="Typo.h6">Example Documents (@_examples.Count)</MudText>
+                </MudStack>
+                
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.Upload"
+                           OnClick="OpenUploadExampleDialog">
+                    Upload Example
+                </MudButton>
+            </MudStack>
+            
+            @if (!_examples.Any())
+            {
+                <MudAlert Severity="Severity.Info" Dense="true">
+                    <MudStack Spacing="1">
+                        <MudText Typo="Typo.body2">No example documents have been uploaded yet.</MudText>
+                        <MudText Typo="Typo.caption">
+                            Example documents serve as reference for auditors and can help improve AI review accuracy.
+                        </MudText>
+                    </MudStack>
+                </MudAlert>
+            }
+            else
+            {
+                <MudGrid>
+                    @foreach (var example in _examples)
+                    {
+                        <MudItem xs="12" sm="6" md="4">
+                            <ExampleDocumentCard Example="@example"
+                                                 OnDownload="DownloadExample"
+                                                 OnPreview="PreviewExample"
+                                                 OnDelete="DeleteExample" />
+                        </MudItem>
+                    }
+                </MudGrid>
+            }
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    [Parameter]
+    public string Id { get; set; } = string.Empty;
+    
+    private GuidelineSet? _guidelineSet;
+    private List<Rule> _rules = new();
+    private List<ExampleDocument> _examples = new();
+    private bool _isLoading = true;
+    private ReviewDimension? _filterDimension;
+    
+    private List<BreadcrumbItem> _breadcrumbs = new()
+    {
+        new BreadcrumbItem("Admin", href: "#", disabled: true),
+        new BreadcrumbItem("Guidelines", href: "/admin/guidelines"),
+        new BreadcrumbItem("Details", href: null, disabled: true)
+    };
+    
+    private IEnumerable<Rule> FilteredRules => _filterDimension.HasValue
+        ? _rules.Where(r => r.EffectiveDimension == _filterDimension.Value)
+        : _rules;
+    
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadGuidelineSet();
+    }
+    
+    private async Task LoadGuidelineSet()
+    {
+        _isLoading = true;
+        
+        try
+        {
+            _guidelineSet = await GuidelineService.GetByIdAsync(Id);
+            if (_guidelineSet != null)
+            {
+                _rules = _guidelineSet.Rules.OrderBy(r => r.EffectiveDimension).ThenBy(r => r.Order).ToList();
+                _breadcrumbs[2] = new BreadcrumbItem(_guidelineSet.Name, href: null, disabled: true);
+                
+                // Load example documents
+                var examples = await GuidelineService.GetExamplesAsync(Id);
+                _examples = examples.ToList();
+            }
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+    
+    private async Task OpenEditDialog()
+    {
+        var parameters = new DialogParameters<GuidelineSetEditor>
+        {
+            { x => x.IsNew, false },
+            { x => x.GuidelineSetId, Id }
+        };
+        
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<GuidelineSetEditor>("Edit Guideline Set", parameters, options);
+        var result = await dialog.Result;
+        
+        if (result != null && !result.Canceled)
+        {
+            await LoadGuidelineSet();
+            Snackbar.Add("Guideline set updated successfully", Severity.Success);
+        }
+    }
+    
+    private async Task OpenCreateRuleDialog()
+    {
+        var parameters = new DialogParameters<AnalyzerEditor>
+        {
+            { x => x.IsNew, true },
+            { x => x.GuidelineSetId, Id }
+        };
+        
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<AnalyzerEditor>("Add Rule", parameters, options);
+        var result = await dialog.Result;
+        
+        if (result != null && !result.Canceled)
+        {
+            await LoadGuidelineSet();
+            Snackbar.Add("Rule added successfully", Severity.Success);
+        }
+    }
+    
+    private async Task OpenEditRuleDialog(Rule rule)
+    {
+        var parameters = new DialogParameters<AnalyzerEditor>
+        {
+            { x => x.IsNew, false },
+            { x => x.GuidelineSetId, Id },
+            { x => x.RuleId, rule.Id }
+        };
+        
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<AnalyzerEditor>("Edit Rule", parameters, options);
+        var result = await dialog.Result;
+        
+        if (result != null && !result.Canceled)
+        {
+            await LoadGuidelineSet();
+            Snackbar.Add("Rule updated successfully", Severity.Success);
+        }
+    }
+    
+    private async Task DeleteRule(Rule rule)
+    {
+        var confirm = await DialogService.ShowMessageBox(
+            "Delete Rule",
+            $"Are you sure you want to delete the rule \"{rule.Name}\"? This action cannot be undone.",
+            yesText: "Delete",
+            cancelText: "Cancel");
+        
+        if (confirm == true)
+        {
+            await GuidelineService.RemoveRuleAsync(Id, rule.Id);
+            _rules.Remove(rule);
+            Snackbar.Add("Rule deleted successfully", Severity.Success);
+        }
+    }
+    
+    private async Task ReorderRules(List<Rule> reorderedRules)
+    {
+        // Update order values
+        for (int i = 0; i < reorderedRules.Count; i++)
+        {
+            reorderedRules[i].Order = i;
+            await GuidelineService.UpdateRuleAsync(Id, reorderedRules[i]);
+        }
+        
+        _rules = reorderedRules;
+        Snackbar.Add("Rules reordered successfully", Severity.Success);
+    }
+    
+    private string GetDimensionColor(ReviewDimension dimension) => dimension switch
+    {
+        ReviewDimension.Language => "#9C27B0",
+        ReviewDimension.Clarity => "#2196F3",
+        ReviewDimension.Completeness => "#4CAF50",
+        ReviewDimension.FactualSupport => "#FF9800",
+        ReviewDimension.Compliance => "#607D8B",
+        ReviewDimension.ToneAndStyle => "#E91E63",
+        ReviewDimension.Structure => "#795548",
+        _ => "#757575"
+    };
+    
+    // Example Document Methods
+    
+    private async Task OpenUploadExampleDialog()
+    {
+        var parameters = new DialogParameters<ExampleUploader>
+        {
+            { x => x.GuidelineSetId, Id }
+        };
+        
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<ExampleUploader>("Upload Example Document", parameters, options);
+        var result = await dialog.Result;
+        
+        if (result != null && !result.Canceled && result.Data is ExampleDocument example)
+        {
+            _examples.Add(example);
+        }
+    }
+    
+    private async Task DownloadExample(ExampleDocument example)
+    {
+        try
+        {
+            var stream = await StorageService.RetrieveAsync(example.StoragePath);
+            using var memoryStream = new MemoryStream();
+            await stream.CopyToAsync(memoryStream);
+            var bytes = memoryStream.ToArray();
+            var base64 = Convert.ToBase64String(bytes);
+            
+            var contentType = example.FileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)
+                ? "application/pdf"
+                : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            
+            await JSRuntime.InvokeVoidAsync("downloadFile", example.FileName, contentType, base64);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error downloading file: {ex.Message}", Severity.Error);
+        }
+    }
+    
+    private async Task PreviewExample(ExampleDocument example)
+    {
+        // For now, just trigger download - could implement a preview dialog later
+        await DownloadExample(example);
+    }
+    
+    private async Task DeleteExample(ExampleDocument example)
+    {
+        var confirm = await DialogService.ShowMessageBox(
+            "Delete Example",
+            $"Are you sure you want to delete the example document \"{example.FileName}\"? This action cannot be undone.",
+            yesText: "Delete",
+            cancelText: "Cancel");
+        
+        if (confirm == true)
+        {
+            try
+            {
+                await GuidelineService.RemoveExampleAsync(Id, example.Id);
+                _examples.Remove(example);
+                Snackbar.Add("Example document deleted successfully", Severity.Success);
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error deleting example: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+}

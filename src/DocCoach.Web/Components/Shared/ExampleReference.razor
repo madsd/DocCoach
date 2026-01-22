@@ -1,0 +1,130 @@
+@using DocCoach.Web.Models
+@using DocCoach.Web.Services.Interfaces
+
+@inject IStorageService StorageService
+@inject IJSRuntime JSRuntime
+@inject ISnackbar Snackbar
+
+<MudPaper Elevation="1" Class="pa-4">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3">
+        <MudIcon Icon="@Icons.Material.Filled.LibraryBooks" Color="Color.Info" />
+        <MudText Typo="Typo.h6">Example Documents</MudText>
+    </MudStack>
+    
+    @if (_isLoading)
+    {
+        <MudStack AlignItems="AlignItems.Center" Class="pa-4">
+            <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+            <MudText Typo="Typo.caption">Loading examples...</MudText>
+        </MudStack>
+    }
+    else if (!Examples.Any())
+    {
+        <MudAlert Severity="Severity.Info" Dense="true">
+            No example documents available for this guideline set.
+        </MudAlert>
+    }
+    else
+    {
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+            These documents demonstrate compliance with the guidelines used for this review.
+        </MudText>
+        
+        <MudStack Spacing="2">
+            @foreach (var example in Examples)
+            {
+                <MudPaper Elevation="0" Class="pa-2" Style="background: var(--mud-palette-background-grey);">
+                    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                            <MudIcon Icon="@GetFileIcon(example.FileName)" Size="Size.Small" Color="Color.Primary" />
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.body2" Class="text-truncate" Style="max-width: 180px;">
+                                    @example.FileName
+                                </MudText>
+                                @if (!string.IsNullOrEmpty(example.Description))
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="text-truncate" Style="max-width: 180px;">
+                                        @example.Description
+                                    </MudText>
+                                }
+                            </MudStack>
+                        </MudStack>
+                        
+                        <MudTooltip Text="Download">
+                            <MudIconButton Icon="@Icons.Material.Filled.Download" 
+                                           Size="Size.Small"
+                                           Color="Color.Primary"
+                                           OnClick="@(() => DownloadExample(example))" />
+                        </MudTooltip>
+                    </MudStack>
+                </MudPaper>
+            }
+        </MudStack>
+        
+        @if (Examples.Count > 3)
+        {
+            <MudButton Variant="Variant.Text" 
+                       Color="Color.Primary" 
+                       Size="Size.Small"
+                       FullWidth="true"
+                       OnClick="@(() => _showAll = !_showAll)"
+                       Class="mt-2">
+                @(_showAll ? "Show Less" : $"Show All ({Examples.Count})")
+            </MudButton>
+        }
+    }
+</MudPaper>
+
+@code {
+    /// <summary>
+    /// The example documents to display.
+    /// </summary>
+    [Parameter]
+    public IReadOnlyList<ExampleDocument> Examples { get; set; } = Array.Empty<ExampleDocument>();
+    
+    /// <summary>
+    /// Whether examples are still loading.
+    /// </summary>
+    [Parameter]
+    public bool IsLoading { get; set; }
+    
+    private bool _isLoading => IsLoading;
+    private bool _showAll;
+    
+    private IEnumerable<ExampleDocument> DisplayedExamples => _showAll 
+        ? Examples 
+        : Examples.Take(3);
+    
+    private string GetFileIcon(string fileName)
+    {
+        var extension = Path.GetExtension(fileName).ToLowerInvariant();
+        return extension switch
+        {
+            ".pdf" => Icons.Material.Filled.PictureAsPdf,
+            ".docx" or ".doc" => Icons.Material.Filled.Description,
+            _ => Icons.Material.Filled.InsertDriveFile
+        };
+    }
+    
+    private async Task DownloadExample(ExampleDocument example)
+    {
+        try
+        {
+            var stream = await StorageService.RetrieveAsync(example.StoragePath);
+            using var memoryStream = new MemoryStream();
+            await stream.CopyToAsync(memoryStream);
+            var bytes = memoryStream.ToArray();
+            var base64 = Convert.ToBase64String(bytes);
+            
+            var contentType = example.FileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)
+                ? "application/pdf"
+                : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            
+            await JSRuntime.InvokeVoidAsync("downloadFile", example.FileName, contentType, base64);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error downloading file: {ex.Message}", Severity.Error);
+        }
+    }
+}

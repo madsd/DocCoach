@@ -1,0 +1,117 @@
+@using DocCoach.Web.Models
+@using DocCoach.Web.Models.ViewModels
+
+<MudPaper Class="@($"pa-4 {Class}")" Elevation="@Elevation">
+    <MudStack Spacing="3">
+        @if (!string.IsNullOrEmpty(Title))
+        {
+            <MudText Typo="Typo.h6">@Title</MudText>
+        }
+        
+        @if (Categories != null && Categories.Count > 0)
+        {
+            <MudChart ChartType="ChartType.Bar"
+                      ChartSeries="@_series"
+                      XAxisLabels="@_labels"
+                      Width="100%"
+                      Height="@Height"
+                      ChartOptions="@_chartOptions" />
+            
+            @if (ShowLegend)
+            {
+                <MudStack Row="true" Justify="Justify.Center" Spacing="4" Class="mt-2">
+                    @foreach (var category in Categories)
+                    {
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                            <MudIcon Icon="@GetCategoryIcon(category.Category)" 
+                                     Size="Size.Small" 
+                                     Color="@GetScoreColor(category.Score)" />
+                            <MudText Typo="Typo.caption">
+                                @category.DisplayName: @category.Score
+                            </MudText>
+                        </MudStack>
+                    }
+                </MudStack>
+            }
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="text-center py-4">
+                No category data available
+            </MudText>
+        }
+    </MudStack>
+</MudPaper>
+
+@code {
+    /// <summary>Chart title.</summary>
+    [Parameter] public string? Title { get; set; }
+    
+    /// <summary>Category scores to display.</summary>
+    [Parameter] public List<CategoryScoreItem>? Categories { get; set; }
+    
+    /// <summary>Chart height.</summary>
+    [Parameter] public string Height { get; set; } = "200px";
+    
+    /// <summary>Show legend below chart.</summary>
+    [Parameter] public bool ShowLegend { get; set; } = true;
+    
+    /// <summary>Paper elevation.</summary>
+    [Parameter] public int Elevation { get; set; } = 2;
+    
+    /// <summary>Additional CSS classes.</summary>
+    [Parameter] public string? Class { get; set; }
+    
+    /// <summary>Click callback for category.</summary>
+    [Parameter] public EventCallback<string> OnCategoryClick { get; set; }
+    
+    private List<ChartSeries> _series = new();
+    private string[] _labels = Array.Empty<string>();
+    private ChartOptions _chartOptions = new()
+    {
+        MaxNumYAxisTicks = 5,
+        YAxisLines = true,
+        YAxisTicks = 20
+    };
+    
+    protected override void OnParametersSet()
+    {
+        if (Categories != null && Categories.Count > 0)
+        {
+            _labels = Categories.Select(c => c.DisplayName).ToArray();
+            _series = new List<ChartSeries>
+            {
+                new ChartSeries
+                {
+                    Name = "Score",
+                    Data = Categories.Select(c => (double)c.Score).ToArray()
+                }
+            };
+        }
+    }
+    
+    private Color GetScoreColor(int score)
+    {
+        return score switch
+        {
+            >= 80 => Color.Success,
+            >= 60 => Color.Warning,
+            _ => Color.Error
+        };
+    }
+    
+    private string GetCategoryIcon(string category)
+    {
+        return category switch
+        {
+            "Clarity" or "Clarity & Readability" => Icons.Material.Filled.Visibility,
+            "Completeness" or "Content Completeness" => Icons.Material.Filled.CheckCircle,
+            "FactualSupport" or "Factual Support" => Icons.Material.Filled.Verified,
+            "Language" or "Language Quality" => Icons.Material.Filled.Spellcheck,
+            "Compliance" or "Specification Compliance" => Icons.Material.Filled.Rule,
+            "ToneAndStyle" or "Tone & Style" => Icons.Material.Filled.RecordVoiceOver,
+            "Structure" or "Document Structure" => Icons.Material.Filled.AccountTree,
+            _ => Icons.Material.Filled.Category
+        };
+    }
+}

@@ -1,0 +1,212 @@
+@page "/admin/guidelines"
+@using DocCoach.Web.Models
+@using DocCoach.Web.Services.Interfaces
+@using DocCoach.Web.State
+@using DocCoach.Web.Components.Shared
+@using DocCoach.Web.Components.Dialogs
+@inject IGuidelineService GuidelineService
+@inject AppState AppState
+@inject NavigationManager Navigation
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Guidelines - Doc Coach</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
+        <MudStack>
+            <MudText Typo="Typo.h4">
+                <MudIcon Icon="@Icons.Material.Filled.Rule" Class="mr-2" />
+                Guideline Sets
+            </MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Manage review rules and guidelines for audit report analysis
+            </MudText>
+        </MudStack>
+        
+        <MudButton Variant="Variant.Filled" 
+                   Color="Color.Primary" 
+                   StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="OpenCreateDialog">
+            Create New Guideline Set
+        </MudButton>
+    </MudStack>
+    
+    @if (_isLoading)
+    {
+        <MudGrid>
+            @for (var i = 0; i < 3; i++)
+            {
+                <MudItem xs="12" md="6" lg="4">
+                    <MudSkeleton SkeletonType="SkeletonType.Rectangle" Width="100%" Height="200px" />
+                </MudItem>
+            }
+        </MudGrid>
+    }
+    else if (_guidelineSets == null || _guidelineSets.Count == 0)
+    {
+        <MudPaper Class="pa-8 text-center" Elevation="2">
+            <MudIcon Icon="@Icons.Material.Filled.RuleFolder" Size="Size.Large" Color="Color.Secondary" Class="mb-4" />
+            <MudText Typo="Typo.h6">No Guideline Sets</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                Create your first guideline set to start reviewing audit reports.
+            </MudText>
+            <MudButton Variant="Variant.Filled" 
+                       Color="Color.Primary" 
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="OpenCreateDialog">
+                Create Guideline Set
+            </MudButton>
+        </MudPaper>
+    }
+    else
+    {
+        <MudGrid>
+            @foreach (var guidelineSet in _guidelineSets)
+            {
+                <MudItem xs="12" md="6" lg="4">
+                    <GuidelineSetCard GuidelineSet="@guidelineSet"
+                                      OnView="@(() => ViewDetails(guidelineSet.Id))"
+                                      OnEdit="@(() => OpenEditDialog(guidelineSet))"
+                                      OnDelete="@(() => DeleteGuidelineSet(guidelineSet))"
+                                      OnSetDefault="@(() => SetAsDefault(guidelineSet))" />
+                </MudItem>
+            }
+        </MudGrid>
+    }
+</MudContainer>
+
+@code {
+    private bool _isLoading = true;
+    private IReadOnlyList<GuidelineSet>? _guidelineSets;
+    
+    protected override async Task OnInitializedAsync()
+    {
+        // Ensure user is in Admin role
+        if (AppState.CurrentRole == UserRole.None)
+        {
+            AppState.CurrentRole = UserRole.Admin;
+        }
+        
+        await LoadGuidelineSets();
+    }
+    
+    private async Task LoadGuidelineSets()
+    {
+        _isLoading = true;
+        StateHasChanged();
+        
+        try
+        {
+            _guidelineSets = await GuidelineService.GetAllAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading guideline sets: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+    
+    private async Task OpenCreateDialog()
+    {
+        var parameters = new DialogParameters<GuidelineSetEditor>
+        {
+            { x => x.IsNew, true }
+        };
+        
+        var options = new DialogOptions 
+        { 
+            MaxWidth = MaxWidth.Small, 
+            FullWidth = true,
+            CloseOnEscapeKey = true
+        };
+        
+        var dialog = await DialogService.ShowAsync<GuidelineSetEditor>("Create Guideline Set", parameters, options);
+        var result = await dialog.Result;
+        
+        if (result is { Canceled: false })
+        {
+            await LoadGuidelineSets();
+            Snackbar.Add("Guideline set created successfully!", Severity.Success);
+        }
+    }
+    
+    private async Task OpenEditDialog(GuidelineSet guidelineSet)
+    {
+        var parameters = new DialogParameters<GuidelineSetEditor>
+        {
+            { x => x.IsNew, false },
+            { x => x.GuidelineSetId, guidelineSet.Id }
+        };
+        
+        var options = new DialogOptions 
+        { 
+            MaxWidth = MaxWidth.Small, 
+            FullWidth = true,
+            CloseOnEscapeKey = true
+        };
+        
+        var dialog = await DialogService.ShowAsync<GuidelineSetEditor>("Edit Guideline Set", parameters, options);
+        var result = await dialog.Result;
+        
+        if (result is { Canceled: false })
+        {
+            await LoadGuidelineSets();
+            Snackbar.Add("Guideline set updated successfully!", Severity.Success);
+        }
+    }
+    
+    private void ViewDetails(string id)
+    {
+        Navigation.NavigateTo($"/admin/guidelines/{id}");
+    }
+    
+    private async Task DeleteGuidelineSet(GuidelineSet guidelineSet)
+    {
+        var confirm = await DialogService.ShowMessageBox(
+            "Delete Guideline Set",
+            $"Are you sure you want to delete \"{guidelineSet.Name}\"? This action cannot be undone.",
+            yesText: "Delete", 
+            cancelText: "Cancel");
+        
+        if (confirm == true)
+        {
+            try
+            {
+                await GuidelineService.DeleteAsync(guidelineSet.Id);
+                await LoadGuidelineSets();
+                Snackbar.Add("Guideline set deleted successfully!", Severity.Success);
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error deleting guideline set: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+    
+    private async Task SetAsDefault(GuidelineSet guidelineSet)
+    {
+        if (guidelineSet.IsDefault) return;
+        
+        try
+        {
+            // Use UpdateAsync to set as default - service will handle unsetting others
+            await GuidelineService.UpdateAsync(
+                guidelineSet.Id,
+                guidelineSet.Name,
+                guidelineSet.Description,
+                guidelineSet.IsActive,
+                isDefault: true);
+            await LoadGuidelineSets();
+            Snackbar.Add($"\"{guidelineSet.Name}\" is now the default guideline set.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error setting default: {ex.Message}", Severity.Error);
+        }
+    }
+}

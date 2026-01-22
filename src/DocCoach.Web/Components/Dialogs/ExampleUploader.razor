@@ -1,0 +1,191 @@
+@using DocCoach.Web.Services.Interfaces
+
+<MudDialog>
+    <TitleContent>
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudIcon Icon="@Icons.Material.Filled.UploadFile" Color="Color.Primary" />
+            <MudText Typo="Typo.h6">Upload Example Document</MudText>
+        </MudStack>
+    </TitleContent>
+    
+    <DialogContent>
+        <MudStack Spacing="4">
+            @if (_isUploading)
+            {
+                <MudStack AlignItems="AlignItems.Center" Spacing="3" Class="pa-4">
+                    <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+                    <MudText>Uploading example document...</MudText>
+                </MudStack>
+            }
+            else
+            {
+                <MudAlert Severity="Severity.Info" Dense="true">
+                    Upload a compliant document to serve as a reference example for auditors reviewing reports against this guideline set.
+                </MudAlert>
+                
+                <MudFileUpload T="Microsoft.AspNetCore.Components.Forms.IBrowserFile"
+                               Accept=".pdf,.docx,.doc"
+                               FilesChanged="OnFileSelected"
+                               MaximumFileCount="1">
+                    <ActivatorContent>
+                        <MudPaper Height="100px" 
+                                  Outlined="true" 
+                                  Class="d-flex align-center justify-center" 
+                                  Style="border-style: dashed; cursor: pointer;">
+                            @if (_selectedFile == null)
+                            {
+                                <MudStack AlignItems="AlignItems.Center" Spacing="1">
+                                    <MudIcon Icon="@Icons.Material.Filled.CloudUpload" Color="Color.Primary" />
+                                    <MudText Typo="Typo.body2">Click or drag to upload PDF/DOCX</MudText>
+                                </MudStack>
+                            }
+                            else
+                            {
+                                <MudStack AlignItems="AlignItems.Center" Spacing="1">
+                                    <MudIcon Icon="@GetFileIcon()" Color="Color.Success" />
+                                    <MudText Typo="Typo.body2">@_selectedFile.Name</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@GetFileSizeDisplay()</MudText>
+                                </MudStack>
+                            }
+                        </MudPaper>
+                    </ActivatorContent>
+                </MudFileUpload>
+                
+                @if (!string.IsNullOrEmpty(_fileError))
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true">@_fileError</MudAlert>
+                }
+                
+                <MudTextField T="string"
+                              @bind-Value="_description"
+                              Label="Description"
+                              Placeholder="What does this example document demonstrate?"
+                              Variant="Variant.Outlined"
+                              Lines="3"
+                              MaxLength="500"
+                              Counter="500"
+                              HelperText="Briefly describe what makes this a good example" />
+            }
+        </MudStack>
+    </DialogContent>
+    
+    <DialogActions>
+        <MudButton OnClick="Cancel" Disabled="_isUploading">Cancel</MudButton>
+        <MudButton Color="Color.Primary" 
+                   Variant="Variant.Filled"
+                   OnClick="Upload"
+                   Disabled="@(!CanUpload())">
+            Upload Example
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+    
+    /// <summary>
+    /// The guideline set ID to add the example to.
+    /// </summary>
+    [Parameter]
+    public string GuidelineSetId { get; set; } = string.Empty;
+    
+    [Inject]
+    private IGuidelineService GuidelineService { get; set; } = null!;
+    
+    [Inject]
+    private ISnackbar Snackbar { get; set; } = null!;
+    
+    private Microsoft.AspNetCore.Components.Forms.IBrowserFile? _selectedFile;
+    private string? _description;
+    private string? _fileError;
+    private bool _isUploading;
+    
+    private const long MaxFileSize = 50 * 1024 * 1024; // 50 MB
+    private static readonly string[] AllowedExtensions = [".pdf", ".docx", ".doc"];
+    
+    private void OnFileSelected(Microsoft.AspNetCore.Components.Forms.IBrowserFile file)
+    {
+        _fileError = null;
+        _selectedFile = file;
+        
+        // Validate file
+        var extension = Path.GetExtension(file.Name).ToLowerInvariant();
+        if (!AllowedExtensions.Contains(extension))
+        {
+            _fileError = $"File type '{extension}' is not supported. Please upload a PDF or DOCX file.";
+            _selectedFile = null;
+            return;
+        }
+        
+        if (file.Size > MaxFileSize)
+        {
+            var sizeMb = file.Size / (1024.0 * 1024.0);
+            _fileError = $"File size ({sizeMb:F1} MB) exceeds the maximum allowed size of 50 MB.";
+            _selectedFile = null;
+        }
+    }
+    
+    private bool CanUpload()
+    {
+        return _selectedFile != null 
+            && string.IsNullOrEmpty(_fileError) 
+            && !_isUploading;
+    }
+    
+    private async Task Upload()
+    {
+        if (_selectedFile == null)
+            return;
+        
+        try
+        {
+            _isUploading = true;
+            StateHasChanged();
+            
+            await using var stream = _selectedFile.OpenReadStream(MaxFileSize);
+            
+            var example = await GuidelineService.AddExampleAsync(
+                GuidelineSetId,
+                _selectedFile.Name,
+                _description,
+                stream);
+            
+            Snackbar.Add($"Example document '{example.FileName}' uploaded successfully", Severity.Success);
+            MudDialog.Close(DialogResult.Ok(example));
+        }
+        catch (Exception ex)
+        {
+            _isUploading = false;
+            Snackbar.Add($"Error uploading example: {ex.Message}", Severity.Error);
+            StateHasChanged();
+        }
+    }
+    
+    private void Cancel() => MudDialog.Cancel();
+    
+    private string GetFileIcon()
+    {
+        if (_selectedFile == null) return Icons.Material.Filled.InsertDriveFile;
+        
+        var extension = Path.GetExtension(_selectedFile.Name).ToLowerInvariant();
+        return extension switch
+        {
+            ".pdf" => Icons.Material.Filled.PictureAsPdf,
+            ".docx" or ".doc" => Icons.Material.Filled.Description,
+            _ => Icons.Material.Filled.InsertDriveFile
+        };
+    }
+    
+    private string GetFileSizeDisplay()
+    {
+        if (_selectedFile == null) return "";
+        
+        var sizeBytes = _selectedFile.Size;
+        if (sizeBytes < 1024)
+            return $"{sizeBytes} B";
+        if (sizeBytes < 1024 * 1024)
+            return $"{sizeBytes / 1024.0:F1} KB";
+        return $"{sizeBytes / (1024.0 * 1024.0):F1} MB";
+    }
+}

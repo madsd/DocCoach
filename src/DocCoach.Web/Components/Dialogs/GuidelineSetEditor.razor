@@ -1,0 +1,164 @@
+@using DocCoach.Web.Models
+@using DocCoach.Web.Models.ViewModels
+@using DocCoach.Web.Services.Interfaces
+@inject IGuidelineService GuidelineService
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@(IsNew ? Icons.Material.Filled.Add : Icons.Material.Filled.Edit)" Class="mr-2" />
+            @(IsNew ? "Create Guideline Set" : "Edit Guideline Set")
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_isLoading)
+        {
+            <MudStack AlignItems="AlignItems.Center" Class="pa-4">
+                <MudProgressCircular Indeterminate="true" />
+                <MudText>Loading...</MudText>
+            </MudStack>
+        }
+        else
+        {
+            <MudForm @ref="_form" @bind-IsValid="_isValid">
+                <MudTextField T="string"
+                              @bind-Value="_viewModel.Name"
+                              Label="Name"
+                              Required="true"
+                              RequiredError="Name is required"
+                              MaxLength="100"
+                              Counter="100"
+                              Immediate="true"
+                              Variant="Variant.Outlined"
+                              Class="mb-4" />
+                
+                <MudTextField T="string"
+                              @bind-Value="_viewModel.Description"
+                              Label="Description"
+                              MaxLength="500"
+                              Counter="500"
+                              Lines="3"
+                              Immediate="true"
+                              Variant="Variant.Outlined"
+                              Class="mb-4" />
+                
+                <MudSwitch T="bool"
+                           @bind-Value="_viewModel.IsDefault"
+                           Label="Set as default guideline set"
+                           Color="Color.Primary"
+                           Class="mb-2" />
+                
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    The default guideline set is automatically selected when uploading new documents.
+                </MudText>
+                
+                @if (!IsNew)
+                {
+                    <MudDivider Class="my-4" />
+                    
+                    <MudSwitch T="bool"
+                               @bind-Value="_viewModel.IsActive"
+                               Label="Active"
+                               Color="Color.Success" />
+                    
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        Inactive guideline sets won't appear in the selection dropdown.
+                    </MudText>
+                }
+            </MudForm>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" 
+                   Variant="Variant.Filled"
+                   OnClick="Save" 
+                   Disabled="@(!_isValid || _isSaving)">
+            @if (_isSaving)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+            }
+            @(IsNew ? "Create" : "Save Changes")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+    
+    [Parameter]
+    public bool IsNew { get; set; } = true;
+    
+    [Parameter]
+    public string? GuidelineSetId { get; set; }
+    
+    private MudForm? _form;
+    private bool _isValid;
+    private bool _isLoading;
+    private bool _isSaving;
+    private GuidelineSetViewModel _viewModel = new();
+    
+    protected override async Task OnInitializedAsync()
+    {
+        if (!IsNew && !string.IsNullOrEmpty(GuidelineSetId))
+        {
+            _isLoading = true;
+            
+            try
+            {
+                var guidelineSet = await GuidelineService.GetByIdAsync(GuidelineSetId);
+                if (guidelineSet != null)
+                {
+                    _viewModel = GuidelineSetViewModel.FromModel(guidelineSet);
+                }
+            }
+            finally
+            {
+                _isLoading = false;
+            }
+        }
+    }
+    
+    private void Cancel() => MudDialog.Cancel();
+    
+    private async Task Save()
+    {
+        if (_form != null)
+        {
+            await _form.Validate();
+            if (!_isValid) return;
+        }
+        
+        _isSaving = true;
+        StateHasChanged();
+        
+        try
+        {
+            if (IsNew)
+            {
+                await GuidelineService.CreateAsync(_viewModel.Name, _viewModel.Description);
+            }
+            else if (!string.IsNullOrEmpty(GuidelineSetId))
+            {
+                await GuidelineService.UpdateAsync(
+                    GuidelineSetId,
+                    _viewModel.Name,
+                    _viewModel.Description,
+                    _viewModel.IsActive,
+                    _viewModel.IsDefault);
+            }
+            
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch
+        {
+            // Error will be shown by the parent
+            MudDialog.Close(DialogResult.Cancel());
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+}

@@ -1,0 +1,199 @@
+@using DocCoach.Web.Models
+
+<MudPaper Class="pa-4" Elevation="2">
+    <MudStack>
+        @* Header with counts *@
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+            <MudText Typo="Typo.h6">
+                <MudIcon Icon="@Icons.Material.Filled.Feedback" Class="mr-2" />
+                Feedback Items (@FilteredItems.Count())
+            </MudText>
+            
+            @* Severity summary chips *@
+            <MudStack Row="true" Spacing="1">
+                <MudChip T="string" Size="Size.Small" Color="Color.Error" 
+                         OnClick="() => ToggleSeverityFilter(FeedbackSeverity.Error)"
+                         Variant="@(IsSeverityActive(FeedbackSeverity.Error) ? Variant.Filled : Variant.Outlined)">
+                    @GetSeverityCount(FeedbackSeverity.Error) Errors
+                </MudChip>
+                <MudChip T="string" Size="Size.Small" Color="Color.Warning"
+                         OnClick="() => ToggleSeverityFilter(FeedbackSeverity.Warning)"
+                         Variant="@(IsSeverityActive(FeedbackSeverity.Warning) ? Variant.Filled : Variant.Outlined)">
+                    @GetSeverityCount(FeedbackSeverity.Warning) Warnings
+                </MudChip>
+                <MudChip T="string" Size="Size.Small" Color="Color.Info"
+                         OnClick="() => ToggleSeverityFilter(FeedbackSeverity.Info)"
+                         Variant="@(IsSeverityActive(FeedbackSeverity.Info) ? Variant.Filled : Variant.Outlined)">
+                    @GetSeverityCount(FeedbackSeverity.Info) Info
+                </MudChip>
+            </MudStack>
+        </MudStack>
+        
+        <MudDivider Class="my-2" />
+        
+        @* Dimension Filter Chips *@
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap" Class="mb-3">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                <MudIcon Icon="@Icons.Material.Filled.FilterList" Size="Size.Small" Class="mr-1" />
+                Filter by:
+            </MudText>
+            
+            @foreach (var dimension in GetAvailableDimensions())
+            {
+                var count = GetDimensionCount(dimension);
+                <MudChip T="string" Size="Size.Small" 
+                         Color="@GetDimensionColor(dimension)"
+                         Variant="@(IsDimensionActive(dimension) ? Variant.Filled : Variant.Outlined)"
+                         OnClick="() => ToggleDimensionFilter(dimension)">
+                    <MudIcon Icon="@GetDimensionIcon(dimension)" Size="Size.Small" Class="mr-1" />
+                    @dimension.GetDisplayName() (@count)
+                </MudChip>
+            }
+            
+            @if (_activeDimensions.Count < GetAvailableDimensions().Count())
+            {
+                <MudButton Variant="Variant.Text" 
+                           Size="Size.Small" 
+                           Color="Color.Secondary"
+                           OnClick="SelectAllDimensions"
+                           StartIcon="@Icons.Material.Filled.ClearAll">
+                    Clear Filters
+                </MudButton>
+            }
+        </MudStack>
+        
+        @* Feedback Items *@
+        <div class="feedback-items-container">
+            @RenderFeedbackItems(FilteredItems)
+        </div>
+    </MudStack>
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] 
+    public IEnumerable<FeedbackItem> Items { get; set; } = [];
+    
+    [Parameter]
+    public bool ShowActions { get; set; } = false;
+    
+    [Parameter]
+    public EventCallback<FeedbackItem> OnMarkAddressed { get; set; }
+    
+    [Parameter]
+    public EventCallback<FeedbackItem> OnAddComment { get; set; }
+    
+    private HashSet<ReviewDimension> _activeDimensions = new();
+    private HashSet<FeedbackSeverity> _activeSeverities = [FeedbackSeverity.Error, FeedbackSeverity.Warning, FeedbackSeverity.Info];
+    
+    protected override void OnParametersSet()
+    {
+        // Initialize active dimensions to all available dimensions
+        if (!_activeDimensions.Any())
+        {
+            _activeDimensions = GetAvailableDimensions().ToHashSet();
+        }
+    }
+    
+    private IEnumerable<FeedbackItem> FilteredItems => Items
+        .Where(i => _activeSeverities.Contains(i.Severity))
+        .Where(i => _activeDimensions.Contains(i.EffectiveDimension))
+        .OrderByDescending(i => i.Severity)
+        .ThenBy(i => i.EffectiveDimension);
+    
+    private IEnumerable<ReviewDimension> GetAvailableDimensions() => 
+        Items.Select(i => i.EffectiveDimension).Distinct().OrderBy(d => d);
+    
+    private int GetDimensionCount(ReviewDimension dimension) => 
+        Items.Count(i => i.EffectiveDimension == dimension);
+    
+    private bool IsDimensionActive(ReviewDimension dimension) => _activeDimensions.Contains(dimension);
+    
+    private void ToggleDimensionFilter(ReviewDimension dimension)
+    {
+        if (_activeDimensions.Contains(dimension))
+        {
+            // Don't allow removing all dimensions
+            if (_activeDimensions.Count > 1)
+            {
+                _activeDimensions.Remove(dimension);
+            }
+        }
+        else
+        {
+            _activeDimensions.Add(dimension);
+        }
+    }
+    
+    private void SelectAllDimensions()
+    {
+        _activeDimensions = GetAvailableDimensions().ToHashSet();
+    }
+    
+    private void ToggleSeverityFilter(FeedbackSeverity severity)
+    {
+        if (_activeSeverities.Contains(severity))
+        {
+            // Don't allow removing all filters
+            if (_activeSeverities.Count > 1)
+            {
+                _activeSeverities.Remove(severity);
+            }
+        }
+        else
+        {
+            _activeSeverities.Add(severity);
+        }
+    }
+    
+    private bool IsSeverityActive(FeedbackSeverity severity) => _activeSeverities.Contains(severity);
+    
+    private int GetSeverityCount(FeedbackSeverity severity) => Items.Count(i => i.Severity == severity);
+    
+    private Color GetDimensionColor(ReviewDimension dimension) => dimension switch
+    {
+        ReviewDimension.Language => Color.Primary,
+        ReviewDimension.Clarity => Color.Secondary,
+        ReviewDimension.Completeness => Color.Tertiary,
+        ReviewDimension.FactualSupport => Color.Info,
+        ReviewDimension.Compliance => Color.Warning,
+        ReviewDimension.ToneAndStyle => Color.Success,
+        ReviewDimension.Structure => Color.Dark,
+        _ => Color.Default
+    };
+    
+    private string GetDimensionIcon(ReviewDimension dimension) => dimension switch
+    {
+        ReviewDimension.Language => Icons.Material.Filled.Spellcheck,
+        ReviewDimension.Clarity => Icons.Material.Filled.Visibility,
+        ReviewDimension.Completeness => Icons.Material.Filled.Checklist,
+        ReviewDimension.FactualSupport => Icons.Material.Filled.FactCheck,
+        ReviewDimension.Compliance => Icons.Material.Filled.Rule,
+        ReviewDimension.ToneAndStyle => Icons.Material.Filled.RecordVoiceOver,
+        ReviewDimension.Structure => Icons.Material.Filled.AccountTree,
+        _ => Icons.Material.Filled.Category
+    };
+    
+    private RenderFragment RenderFeedbackItems(IEnumerable<FeedbackItem> items) => builder =>
+    {
+        var itemList = items.ToList();
+        
+        if (itemList.Count == 0)
+        {
+            builder.OpenComponent<MudAlert>(0);
+            builder.AddAttribute(1, nameof(MudAlert.Severity), Severity.Success);
+            builder.AddAttribute(2, "ChildContent", (RenderFragment)(b => b.AddContent(0, "No issues found matching the current filters!")));
+            builder.CloseComponent();
+            return;
+        }
+        
+        foreach (var item in itemList)
+        {
+            builder.OpenComponent<FeedbackItemCard>(0);
+            builder.AddAttribute(1, nameof(FeedbackItemCard.Item), item);
+            builder.AddAttribute(2, nameof(FeedbackItemCard.ShowActions), ShowActions);
+            builder.AddAttribute(3, nameof(FeedbackItemCard.OnMarkAddressed), OnMarkAddressed);
+            builder.AddAttribute(4, nameof(FeedbackItemCard.OnAddComment), OnAddComment);
+            builder.CloseComponent();
+        }
+    };
+}

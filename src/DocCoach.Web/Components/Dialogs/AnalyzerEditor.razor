@@ -1,0 +1,335 @@
+@using DocCoach.Web.Models
+@using DocCoach.Web.Models.ViewModels
+@using DocCoach.Web.Services.Interfaces
+@using DocCoach.Web.Services.Analyzers
+@using DocCoach.Web.Components.Shared
+@inject IGuidelineService GuidelineService
+@inject IEnumerable<IReviewAnalyzer> Analyzers
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@(IsNew ? Icons.Material.Filled.Add : Icons.Material.Filled.Edit)" Class="mr-2" />
+            @(IsNew ? "Add Rule" : "Edit Rule")
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_isLoading)
+        {
+            <MudStack AlignItems="AlignItems.Center" Class="pa-4">
+                <MudProgressCircular Indeterminate="true" />
+                <MudText>Loading...</MudText>
+            </MudStack>
+        }
+        else
+        {
+            <MudForm @ref="_form" @bind-IsValid="_isValid">
+                <MudTextField T="string"
+                              @bind-Value="_viewModel.Name"
+                              Label="Name"
+                              Required="true"
+                              RequiredError="Name is required"
+                              MaxLength="100"
+                              Counter="100"
+                              Immediate="true"
+                              Variant="Variant.Outlined"
+                              Class="mb-4" />
+                
+                <MudTextField T="string"
+                              @bind-Value="_viewModel.Description"
+                              Label="Description"
+                              MaxLength="500"
+                              Counter="500"
+                              Lines="3"
+                              Immediate="true"
+                              Variant="Variant.Outlined"
+                              Class="mb-4" />
+                
+                <MudGrid>
+                    <MudItem xs="12" sm="6">
+                        <MudSelect T="RuleType"
+                                   @bind-Value="SelectedRuleType"
+                                   Label="Rule Analyzer"
+                                   Required="true"
+                                   Variant="Variant.Outlined"
+                                   HelperText="@GetRuleTypeHelperText()"
+                                   Class="mb-4">
+                            @foreach (var ruleType in GetAvailableRuleTypes())
+                            {
+                                <MudSelectItem Value="@ruleType">
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                        <MudIcon Icon="@GetRuleTypeIcon(ruleType)" Size="Size.Small" />
+                                        @ruleType.GetDisplayName()
+                                    </MudStack>
+                                </MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    
+                    <MudItem xs="12" sm="6">
+                        <MudSelect T="ReviewDimension"
+                                   @bind-Value="_viewModel.Dimension"
+                                   Label="Review Dimension"
+                                   Required="true"
+                                   Variant="Variant.Outlined"
+                                   Adornment="Adornment.Start"
+                                   AdornmentIcon="@GetDimensionIcon(_viewModel.Dimension)"
+                                   AdornmentColor="@GetDimensionColor(_viewModel.Dimension)"
+                                   Class="mb-4">
+                            @foreach (var dimension in Enum.GetValues<ReviewDimension>())
+                            {
+                                <MudSelectItem Value="@dimension">@dimension.GetDisplayName()</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                </MudGrid>
+                
+                <!-- Show evaluation mode and scope (derived from RuleType) -->
+                <MudStack Row="true" Spacing="2" Class="mb-4">
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@GetModeColor(_viewModel.RuleType.GetRecommendedEvaluationMode())">
+                        @_viewModel.RuleType.GetRecommendedEvaluationMode()
+                    </MudChip>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">
+                        Scope: @_viewModel.RuleType.GetTypicalScope()
+                    </MudChip>
+                </MudStack>
+                
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Weight: @_viewModel.Weight</MudText>
+                <MudSlider T="int"
+                           @bind-Value="_viewModel.Weight"
+                           Min="1"
+                           Max="10"
+                           Step="1"
+                           Color="Color.Primary"
+                           Class="mb-2" />
+                <MudStack Row="true" Justify="Justify.SpaceBetween" Class="mb-4">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Low Priority</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">High Priority</MudText>
+                </MudStack>
+                
+                <MudDivider Class="my-4" />
+                
+                <!-- Dynamic configuration based on RuleType -->
+                @if (GetConfigParameters().Any())
+                {
+                    <ConfigParameterEditor Parameters="@GetConfigParameters()"
+                                           ConfigurationJson="@_viewModel.RuleConfiguration"
+                                           ConfigurationJsonChanged="@(json => _viewModel.RuleConfiguration = json)" />
+                    
+                    <MudDivider Class="my-4" />
+                }
+                
+                <MudSwitch T="bool"
+                           @bind-Value="_viewModel.IsEnabled"
+                           Label="Enabled"
+                           Color="Color.Success" />
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    Disabled rules won't be evaluated during document review.
+                </MudText>
+            </MudForm>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" 
+                   Variant="Variant.Filled"
+                   OnClick="Save" 
+                   Disabled="@(!_isValid || _isSaving)">
+            @if (_isSaving)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+            }
+            @(IsNew ? "Add" : "Save Changes")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+    
+    [Parameter]
+    public bool IsNew { get; set; } = true;
+    
+    [Parameter]
+    public string GuidelineSetId { get; set; } = string.Empty;
+    
+    [Parameter]
+    public string? RuleId { get; set; }
+    
+    private MudForm? _form;
+    private bool _isValid;
+    private bool _isLoading;
+    private bool _isSaving;
+    private bool _suppressRuleTypeSync;
+    private RuleViewModel _viewModel = new();
+    private RuleType _selectedRuleType;
+    private GuidelineSet? _guidelineSet;
+    
+    protected override async Task OnInitializedAsync()
+    {
+        _isLoading = true;
+        _suppressRuleTypeSync = true;
+        
+        try
+        {
+            _guidelineSet = await GuidelineService.GetByIdAsync(GuidelineSetId);
+            
+            if (!IsNew && !string.IsNullOrEmpty(RuleId) && _guidelineSet != null)
+            {
+                var rule = _guidelineSet.Rules.FirstOrDefault(r => r.Id == RuleId);
+                if (rule != null)
+                {
+                    _viewModel = RuleViewModel.FromModel(rule);
+                }
+            }
+            else
+            {
+                // Set default order to end of list
+                _viewModel.Order = _guidelineSet?.Rules.Count ?? 0;
+            }
+        }
+        finally
+        {
+            _selectedRuleType = _viewModel.RuleType;
+            _suppressRuleTypeSync = false;
+            _isLoading = false;
+        }
+    }
+    
+    private void Cancel() => MudDialog.Cancel();
+    
+    private async Task Save()
+    {
+        if (_form != null)
+        {
+            await _form.Validate();
+            if (!_isValid) return;
+        }
+        
+        _isSaving = true;
+        StateHasChanged();
+        
+        try
+        {
+            // Sync derived properties from RuleType
+            _viewModel.EvaluationMode = _viewModel.RuleType.GetRecommendedEvaluationMode();
+            _viewModel.Scope = _viewModel.RuleType.GetTypicalScope();
+            
+            if (IsNew)
+            {
+                var newRule = _viewModel.ToModel();
+                await GuidelineService.AddRuleAsync(GuidelineSetId, newRule);
+            }
+            else if (!string.IsNullOrEmpty(RuleId))
+            {
+                var rule = _viewModel.ToModel();
+                rule.Id = RuleId;
+                await GuidelineService.UpdateRuleAsync(GuidelineSetId, rule);
+            }
+            
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch
+        {
+            MudDialog.Close(DialogResult.Cancel());
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+    
+    private IEnumerable<RuleType> GetAvailableRuleTypes()
+    {
+        // Only return rule types that have an associated analyzer
+        var supportedTypes = Analyzers
+            .SelectMany(a => a.SupportedRuleTypes)
+            .Distinct()
+            .OrderBy(rt => rt.GetDisplayName())
+            .ToList();
+        
+        return supportedTypes;
+    }
+    
+    private IReadOnlyList<ConfigParameter> GetConfigParameters()
+    {
+        // Find the analyzer that handles this rule type
+        var analyzer = Analyzers.FirstOrDefault(a => 
+            a.SupportedRuleTypes.Contains(_viewModel.RuleType));
+        
+        return analyzer?.ConfigParameters ?? Array.Empty<ConfigParameter>();
+    }
+    
+    private string GetRuleTypeHelperText()
+    {
+        var mode = _viewModel.RuleType.GetRecommendedEvaluationMode();
+        return mode switch
+        {
+            EvaluationMode.Static => "Evaluated using rules and patterns",
+            EvaluationMode.AIBased => "Evaluated using AI analysis",
+            _ => ""
+        };
+    }
+    
+    private string GetRuleTypeIcon(RuleType ruleType)
+    {
+        var mode = ruleType.GetRecommendedEvaluationMode();
+        return mode switch
+        {
+            EvaluationMode.Static => Icons.Material.Filled.Rule,
+            EvaluationMode.AIBased => Icons.Material.Filled.Psychology,
+            _ => Icons.Material.Filled.Category
+        };
+    }
+    
+    private Color GetModeColor(EvaluationMode mode) => mode switch
+    {
+        EvaluationMode.Static => Color.Info,
+        EvaluationMode.AIBased => Color.Secondary,
+        _ => Color.Default
+    };
+    
+    private string GetDimensionIcon(ReviewDimension dimension) => dimension switch
+    {
+        ReviewDimension.Language => Icons.Material.Filled.Spellcheck,
+        ReviewDimension.Clarity => Icons.Material.Filled.Visibility,
+        ReviewDimension.Completeness => Icons.Material.Filled.Checklist,
+        ReviewDimension.FactualSupport => Icons.Material.Filled.FactCheck,
+        ReviewDimension.Compliance => Icons.Material.Filled.Rule,
+        ReviewDimension.ToneAndStyle => Icons.Material.Filled.RecordVoiceOver,
+        ReviewDimension.Structure => Icons.Material.Filled.AccountTree,
+        _ => Icons.Material.Filled.Category
+    };
+    
+    private Color GetDimensionColor(ReviewDimension dimension) => dimension switch
+    {
+        ReviewDimension.Language => Color.Primary,
+        ReviewDimension.Clarity => Color.Info,
+        ReviewDimension.Completeness => Color.Success,
+        ReviewDimension.FactualSupport => Color.Warning,
+        ReviewDimension.Compliance => Color.Secondary,
+        ReviewDimension.ToneAndStyle => Color.Tertiary,
+        ReviewDimension.Structure => Color.Dark,
+        _ => Color.Default
+    };
+
+    private RuleType SelectedRuleType
+    {
+        get => _selectedRuleType;
+        set
+        {
+            if (_selectedRuleType == value)
+            {
+                return;
+            }
+
+            _selectedRuleType = value;
+            _viewModel.RuleType = value;
+            if (!_suppressRuleTypeSync)
+            {
+                _viewModel.Dimension = value.GetDimension();
+            }
+        }
+    }
+}
