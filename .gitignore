@@ -70,5 +70,11 @@ AzuriteConfig/
 # Azure Developer CLI
 .azure/
 
+# VS Code settings
+.vscode/
+
+# Specify settings
+.specify/
+
 # Demo data (generated)
 data/files/
